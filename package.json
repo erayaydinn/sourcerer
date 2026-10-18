@@ -16,6 +16,7 @@
   "engines": {
     "node": ">=20.12"
   },
+  "packageManager": "pnpm@9.15.9",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/erayaydinn/sourcerer.git"
@@ -31,15 +32,15 @@
     "smoke": "node src/cli/index.js smoke"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.135.0",
-    "commander": "^14.0.3",
-    "execa": "^9.6.1",
-    "openai": "^6.49.0",
-    "yaml": "^2.9.1",
-    "zod": "^4.6.7"
+    "@anthropic-ai/sdk": "0.135.0",
+    "commander": "14.0.3",
+    "execa": "9.6.1",
+    "openai": "6.49.0",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
-    "eslint": "^9.39.5"
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5"
   }
 }

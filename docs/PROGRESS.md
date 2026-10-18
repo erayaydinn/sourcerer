@@ -317,3 +317,11 @@ Limits from env as well:
 - This machine: `sourcerer init` created ~/.config/sourcerer, and its .env has the ai-frontend/ai-backend paths. Outside the repo, `sourcerer` uses that workspace. Inside ~/Repos/Sourcerer it still uses the repo, which keeps the earlier run history (login-alt-yapisi-kur).
 
 Not done: `npm publish` (needs your npm login and explicit go).
+
+## pnpm + pinned versions (done)
+
+- Dependencies are pinned exactly (no ^), using the installed versions.
+- Moved to pnpm: `pnpm import` kept every version from package-lock.json. package-lock.json is removed, and pnpm-lock.yaml (lockfile 9.0) plus `packageManager: pnpm@9.15.9` are added.
+- Same-major update: every dependency was already the newest of its major, so nothing changed.
+  - Newer majors available, not taken: commander 15, execa 10, openai 7, eslint 10 / @eslint/js 10.
+- Dev link: `npm link` still works with the pnpm-installed node_modules (it only symlinks the bin; verified with a temp global prefix). `pnpm link --global` failed in the sandbox over the global store location, so the README uses npm link.

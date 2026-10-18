@@ -22,7 +22,7 @@ Every agent can use a different model and CLI. Supported adapters: the `claude` 
 ## Install
 
 ```sh
-npm install -g @erayaydinn/sourcerer
+npm install -g @erayaydinn/sourcerer      # or: pnpm add -g @erayaydinn/sourcerer
 sourcerer init            # creates ~/.config/sourcerer (config/, agents/, .env)
 ```
 
@@ -94,8 +94,8 @@ See `.env.example` for the full list. Per repo you can also set a `setup` comman
 
 ```sh
 git clone git@github.com:erayaydinn/sourcerer.git && cd sourcerer
-npm install && npm link
-npm test && npm run lint
+pnpm install && npm link      # pnpm 9+; npm link only symlinks the bin
+pnpm test && pnpm lint
 ```
 
 Inside the clone, `sourcerer` uses the clone itself as its workspace (rule 3 above).
