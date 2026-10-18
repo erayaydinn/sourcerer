@@ -1,13 +1,28 @@
 {
-  "name": "sourcerer",
+  "name": "@erayaydinn/sourcerer",
   "version": "0.1.0",
-  "private": true,
+  "description": "Orchestrator + subagent factory: planner, parallel frontend/backend coders and a reviewer, each on its own LLM",
   "type": "module",
   "bin": {
     "sourcerer": "src/cli/index.js"
   },
+  "files": [
+    "src",
+    "config",
+    "agents",
+    ".env.example",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/erayaydinn/sourcerer.git"
+  },
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "lint": "eslint .",

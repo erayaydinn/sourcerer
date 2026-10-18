@@ -1,16 +1,16 @@
-# Paths are relative to the project root.
+# Paths are relative to the project root. ${VAR} and ${VAR:-default} come from the environment / .env.
 # base: branch new worktrees start from. setup: runs once in each new worktree.
 # test (optional): run by the orchestrator after every coder pass.
 # docs: paths searched by search_docs (with the repo's commit messages).
 repos:
   frontend:
-    path: /Users/erayaydin/Repos/ai-frontend
+    path: ${SOURCERER_FRONTEND}
     base: main
     setup: { run: [pnpm, install, --frozen-lockfile], timeoutSec: 600 }   # needs pnpm 9+ (lockfile 9.0)
     test: { run: [pnpm, run, build], timeoutSec: 300 }                    # no test script; build checks the code
     docs: [docs, adr, README.md]
   backend:
-    path: /Users/erayaydin/Repos/ai-backend
+    path: ${SOURCERER_BACKEND}
     base: main
     docs: [docs, adr, README.md]
 
@@ -21,12 +21,12 @@ paths:
   worktrees: ./worktrees
 
 budget:
-  maxCostPerRun: 5
-  maxCostPerAgent: 2
+  maxCostPerRun: ${SOURCERER_MAX_COST_PER_RUN:-5}
+  maxCostPerAgent: ${SOURCERER_MAX_COST_PER_AGENT:-2}
 
 # maxRounds: coder passes per task (1 = no fix rounds). testOutputChars: test output tail sent back to a coder.
 review:
-  maxRounds: 3
+  maxRounds: ${SOURCERER_MAX_ROUNDS:-3}
   testOutputChars: 2000
 
 # Limits for the built-in tools used by API agents (openai-compat, anthropic).

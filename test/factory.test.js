@@ -80,3 +80,10 @@ test('applyLlmOverrides rejects bad pairs and unknown keys', () => {
   assert.throws(() => applyLlmOverrides([coder], ['coder']), /expects <role\|agent>=<profile>/);
   assert.throws(() => applyLlmOverrides([coder], ['nobody=chat']), /no agent or role named "nobody"/);
 });
+
+test('an empty model or fallbackLlm (unset env with :-) counts as not set', () => {
+  const def = agent({ name: 'c', role: 'coder', repo: 'frontend', llm: 'claude', model: '', fallbackLlm: '' });
+  assert.equal(def.model, undefined);
+  assert.equal(def.fallbackLlm, undefined);
+  assert.equal(createAgent(def, config).model, 'm1');
+});

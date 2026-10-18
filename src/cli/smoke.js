@@ -2,12 +2,11 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAgent } from '../adapters/index.js';
-import { loadConfig, loadEnv } from '../core/config.js';
+import { loadConfig } from '../core/config.js';
 import { loadPricing } from '../core/cost.js';
 
 // Calls each LLM profile once with a tiny prompt. Costs real money.
 export async function smokeCommand(profiles, { root }, print) {
-  loadEnv(root);
   const config = loadConfig(root);
   const pricing = loadPricing(config.paths.pricing);
   const cwd = mkdtempSync(join(tmpdir(), 'sourcerer-smoke-'));

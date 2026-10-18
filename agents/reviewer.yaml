@@ -1,6 +1,7 @@
 name: reviewer
 role: reviewer
-llm: cursor-main
+llm: ${SOURCERER_REVIEWER_LLM:-cursor-main}
+model: ${SOURCERER_REVIEWER_MODEL:-}   # empty: the profile's own model
 tools: [read_file, search_code, find_symbol, search_docs]
 fileScope: { read: ["**"], write: [] }
 maxTurns: 15

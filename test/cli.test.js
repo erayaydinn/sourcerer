@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, renameSync } from 'node:fs';
+import { cpSync, mkdtempSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildProgram } from '../src/cli/index.js';
+import { loadConfig } from '../src/core/config.js';
 import { makeRuns } from './run-history.test.js';
 
 // A temp project root: the repo's config and agents, plus fake runs.
@@ -11,6 +12,7 @@ const root = mkdtempSync(join(tmpdir(), 'sourcerer-cli-'));
 cpSync(new URL('../config', import.meta.url), join(root, 'config'), { recursive: true });
 cpSync(new URL('../agents', import.meta.url), join(root, 'agents'), { recursive: true });
 renameSync(makeRuns(), join(root, 'runs'));
+writeFileSync(join(root, '.env'), 'SOURCERER_FRONTEND=/tmp/fe\nSOURCERER_BACKEND=/tmp/be\n');
 
 async function cli(...args) {
   const lines = [];
@@ -56,4 +58,44 @@ test('validate rejects an override that breaks the rules', async () => {
 
 test('run rejects an invalid --side before loading anything', async () => {
   await assert.rejects(cli('run', '--side', 'mobile', 'some task'), /--side expects frontend and\/or backend/);
+});
+
+test('role env vars pick the profile and model; empty model means the profile default', async () => {
+  process.env.SOURCERER_CODER_MODEL = 'sonnet';
+  process.env.SOURCERER_REVIEWER_LLM = 'claude-cheap';
+  try {
+    const { out } = await cli('validate');
+    assert.match(out, /coder-backend \(coder\) -> claude-strong: anthropic\/sonnet/);
+    assert.match(out, /reviewer \(reviewer\) -> claude-cheap: anthropic\/sonnet/);
+    assert.match(out, /planner \(planner\) -> claude-strong: anthropic\/opus/);
+  } finally {
+    delete process.env.SOURCERER_CODER_MODEL;
+    delete process.env.SOURCERER_REVIEWER_LLM;
+  }
+});
+
+test('--llm wins over the role env vars and drops the env model', async () => {
+  process.env.SOURCERER_REVIEWER_MODEL = 'grok-4.7-high';
+  try {
+    const { out } = await cli('validate', '--llm', 'reviewer=claude-cheap');
+    assert.match(out, /reviewer \(reviewer\) -> claude-cheap: anthropic\/sonnet/);
+  } finally {
+    delete process.env.SOURCERER_REVIEWER_MODEL;
+  }
+});
+
+test('budget and round limits come from env as numbers, with YAML defaults', () => {
+  assert.deepEqual([loadConfig(root).budget, loadConfig(root).review.maxRounds], [{ maxCostPerRun: 5, maxCostPerAgent: 2 }, 3]);
+  Object.assign(process.env, { SOURCERER_MAX_COST_PER_RUN: '1.5', SOURCERER_MAX_COST_PER_AGENT: '0.5', SOURCERER_MAX_ROUNDS: '1' });
+  try {
+    const config = loadConfig(root);
+    assert.deepEqual(config.budget, { maxCostPerRun: 1.5, maxCostPerAgent: 0.5 });
+    assert.equal(config.review.maxRounds, 1);
+    process.env.SOURCERER_MAX_ROUNDS = 'three';
+    assert.throws(() => loadConfig(root), /maxRounds/);
+    process.env.SOURCERER_MAX_ROUNDS = '0';
+    assert.throws(() => loadConfig(root), /maxRounds/);
+  } finally {
+    for (const name of ['SOURCERER_MAX_COST_PER_RUN', 'SOURCERER_MAX_COST_PER_AGENT', 'SOURCERER_MAX_ROUNDS']) delete process.env[name];
+  }
 });

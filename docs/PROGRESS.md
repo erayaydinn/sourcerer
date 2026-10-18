@@ -281,3 +281,39 @@ Known issues:
 - The planner still runs (contract + instructions) and is told the work is limited to those sides. Its `sides` choice is overridden, and the run fails if it wrote no instructions for a forced side.
 - Only the forced sides get worktrees, coders, tests and diffs. An invalid value fails before any LLM call. The tmux relaunch passes `--side` on, and run.started logs `sides`.
 - Tests: 86 total. Verified with the fake claude: the planner picked both sides, but only backend ran.
+
+## Config from env: repo paths and per-role models (done)
+
+- Every YAML file (config, agents, pricing) supports `${VAR}` and `${VAR:-default}` (src/core/env.js). Values are filled in before zod validation, so env values follow the same rules.
+  - Unset and empty count the same.
+  - A variable without a default that isn't set is an error naming the file and key path.
+- `loadConfig` loads `<root>/.env` itself, so every command sees it. Shell variables win over .env.
+- Repo paths: `SOURCERER_FRONTEND` and `SOURCERER_BACKEND` (required). The local `.env` has them; .env is gitignored, so personal paths no longer go to git.
+- Per role: `SOURCERER_{PLANNER,CODER,REVIEWER}_LLM` picks the profile (default: the agent YAML's) and `..._MODEL` picks the model (default: the profile's model). CODER covers both coders.
+- Precedence: `--llm` > env > YAML. `--llm` drops the env model, since it belonged to the old profile.
+- An empty `model`/`fallbackLlm` counts as not set (schemas.js `optionalText`).
+- `.env.example` lists every variable.
+- Tests: 92 total (interpolation, missing-var paths, empty model, role vars, --llm precedence).
+
+Known issue: whether a model exists in the chosen CLI can't be checked statically. Use `sourcerer smoke`.
+
+Limits from env as well:
+- `SOURCERER_MAX_COST_PER_RUN` (default 5), `SOURCERER_MAX_COST_PER_AGENT` (default 2) and `SOURCERER_MAX_ROUNDS` (default 3).
+- Env text is converted to numbers only for those fields (schemas.js `envNumber`). Non-numbers and out-of-range values fail validation with the key path.
+- Other numeric fields (timeouts, maxTurns, testOutputChars) are still YAML-only.
+- Tests: 93 total.
+
+## npm package + workspaces (done, not published)
+
+- Workspace resolution (src/cli/root.js): `--root` > `SOURCERER_ROOT` > nearest parent folder with config/ + agents/ (so the dev clone and worktrees inside it still work) > `$XDG_CONFIG_HOME/sourcerer` or `~/.config/sourcerer`. No match is an error that says to run `sourcerer init`. The package folder is no longer a default.
+- `sourcerer init [dir]` (src/cli/init.js): copies the package's config/, agents/ and .env.example, plus a .env made from .env.example. Existing files are never overwritten. Target: [dir] > --root > SOURCERER_ROOT > ~/.config/sourcerer.
+- package.json:
+  - Name `@erayaydinn/sourcerer` (`sourcerer` is taken on npm). `private` is removed.
+  - `files` = src, config, agents, .env.example and README.md (46 files, 29.8 kB).
+  - `publishConfig.access: public`, `license: UNLICENSED` (pending your choice).
+- README.md (English): install, init, usage, configuration, safety notes, development.
+- Tests: 97 total (root resolution, init copy/skip/.env).
+- Verified (free): `npm pack`, then install into a temp prefix, `init` into a temp XDG_CONFIG_HOME, validate, and a fake-claude run from another folder. runs/ and worktrees/ were created in the workspace and the package folder stayed clean.
+- This machine: `sourcerer init` created ~/.config/sourcerer, and its .env has the ai-frontend/ai-backend paths. Outside the repo, `sourcerer` uses that workspace. Inside ~/Repos/Sourcerer it still uses the repo, which keeps the earlier run history (login-alt-yapisi-kur).
+
+Not done: `npm publish` (needs your npm login and explicit go).

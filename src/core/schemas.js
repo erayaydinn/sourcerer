@@ -45,12 +45,17 @@ const repo = z.object({
   docs: z.array(z.string()).default([]),
 }).strict();
 
+// Env values arrive as text: "5" -> 5 for fields that may come from ${VAR}. Non-numbers still fail.
+function envNumber(schema) {
+  return z.preprocess((value) => (typeof value === 'string' && value.trim() !== '' ? Number(value) : value), schema);
+}
+
 export const factoryConfig = z.object({
   repos: z.object({ frontend: repo, backend: repo }).strict(),
   paths: z.object({ agents: z.string(), runs: z.string(), pricing: z.string(), worktrees: z.string() }).strict(),
-  budget: z.object({ maxCostPerRun: z.number().positive(), maxCostPerAgent: z.number().positive() }).strict(),
+  budget: z.object({ maxCostPerRun: envNumber(z.number().positive()), maxCostPerAgent: envNumber(z.number().positive()) }).strict(),
   review: z.object({
-    maxRounds: z.number().int().min(1),
+    maxRounds: envNumber(z.number().int().min(1)),
     testOutputChars: z.number().int().positive(),
   }).strict(),
   tools: z.object({
@@ -71,13 +76,16 @@ export const pricingFile = z.object({
   }).strict()).default({}),
 }).strict();
 
+// `model: ${SOURCERER_CODER_MODEL:-}` resolves to '' when unset, which means "not set".
+const optionalText = z.preprocess((value) => (value === '' ? undefined : value), z.string().optional());
+
 export const agentDef = z.object({
   name: z.string(),
   role: z.enum(ROLES),
   repo: z.enum(['frontend', 'backend']).optional(),
   llm: z.string(),
-  model: z.string().optional(),
-  fallbackLlm: z.string().optional(),
+  model: optionalText,
+  fallbackLlm: optionalText,
   tools: z.array(z.enum(TOOLS)).default([]),
   fileScope: z.object({
     read: z.array(z.string()).default([]),

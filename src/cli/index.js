@@ -1,30 +1,36 @@
 #!/usr/bin/env node
 import { realpathSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { costCommand } from './cost.js';
+import { initCommand } from './init.js';
 import { logsCommand } from './logs.js';
+import { resolveRoot } from './root.js';
 import { runCommand } from './run.js';
 import { smokeCommand } from './smoke.js';
 import { statusCommand } from './status.js';
 import { validateCommand } from './validate.js';
 import { worktreeCreateCommand, worktreeRemoveCommand } from './worktree.js';
 
-// Sourcerer's own folder: config/, agents/ and runs/ live there.
-const DEFAULT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const collect = (value, previous) => [...previous, value];
 
 // Each action stores its exit code in `result.code`; print is injectable for tests.
 export function buildProgram({ print = console.log, result = {} } = {}) {
   const program = new Command('sourcerer')
     .description('Orchestrator + subagent factory for a frontend and a backend repo')
-    .option('--root <dir>', 'project folder with config/ and agents/', DEFAULT_ROOT);
-  const globals = (command) => ({ ...command.optsWithGlobals(), root: resolve(command.optsWithGlobals().root) });
-  const act = (fn) => async (...args) => {
+    .option('--root <dir>', 'workspace with config/ and agents/ (default: SOURCERER_ROOT, a parent folder, or ~/.config/sourcerer)');
+  // Every command except init needs an existing workspace.
+  const act = (fn, { needsRoot = true } = {}) => async (...args) => {
     const command = args.at(-1);
-    result.code = await fn(...args.slice(0, -2), { ...globals(command), ...args.at(-2) }, print);
+    const options = command.optsWithGlobals();
+    const root = needsRoot ? resolveRoot({ flag: options.root }) : options.root;
+    result.code = await fn(...args.slice(0, -2), { ...options, root }, print);
   };
+
+  program.command('init')
+    .description('create a workspace (config, agents, .env) from the package templates')
+    .argument('[dir]', 'folder (default: --root, SOURCERER_ROOT or ~/.config/sourcerer)')
+    .action(act(initCommand, { needsRoot: false }));
 
   program.command('run')
     .description('plan, code and review a task')
