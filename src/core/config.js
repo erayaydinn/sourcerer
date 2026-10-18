@@ -23,7 +23,7 @@ export const ENV_SETTINGS = [
   ['SOURCERER_MAX_ROUNDS', ['review', 'maxRounds']],
 ];
 
-const SECTIONS = ['repos', 'paths', 'budget', 'review', 'tools', 'llms', 'agents', 'pricing'];
+const SECTIONS = ['repos', 'paths', 'budget', 'review', 'rag', 'tools', 'llms', 'agents', 'pricing'];
 
 // Parsed YAML with ${VAR} / ${VAR:-default} filled from the environment.
 export function readYamlData(file) {

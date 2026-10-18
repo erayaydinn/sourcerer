@@ -35,7 +35,8 @@ End your answer with exactly one fenced json block in this shape:
 }
 
 // feedback: { round, comments, testOutput } for fix rounds, null for the first pass.
-export function coderPrompt(task, plan, side, workspace, feedback) {
+// context: likely relevant files from the repo search (first pass only), or ''.
+export function coderPrompt(task, plan, side, workspace, feedback, context = '') {
   const readOnly = workspace.readDirs.length ? `\nRead-only (do not change): ${workspace.readDirs.join(', ')}` : '';
   return `Task: ${task}
 
@@ -46,7 +47,7 @@ Your part (${side}):
 ${plan.instructions[side]}
 
 Work only in ${workspace.cwd}.${readOnly}
-Write and run your own tests and fix failures. Do not commit or push.${feedback ? fixSection(feedback) : ''}`;
+Write and run your own tests and fix failures. Do not commit or push.${context ? `\n\n${context}` : ''}${feedback ? fixSection(feedback) : ''}`;
 }
 
 function fixSection({ round, comments, testOutput }) {

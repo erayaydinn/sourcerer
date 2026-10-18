@@ -461,3 +461,21 @@ test('a token limit pauses the run like a cost limit; unknown-cost calls still c
   assert.equal(summary.totalTokens, 1400);
   assert.deepEqual(summary.tokensPerAgent, { planner: 700, 'coder-backend': 700 });
 });
+
+test('contextFor adds repo context to the first coder pass only and saves it in the run', async () => {
+  const { config, agents } = await setup();
+  const asked = [];
+  const contextFor = async ({ side, plan, worktree }) => {
+    asked.push({ side, worktree: Boolean(worktree), contract: plan.contract });
+    return `Likely relevant files (BM25 search of the ${side} repo; ...)\n### src/x.js`;
+  };
+  let reviews = 0;
+  const reviewer = async () => result(++reviews === 1 ? changes({ backend: ['fix'] }) : approve);
+  const { run, prompts } = recorder(['backend'], { reviewer });
+  const out = await runTask('Context', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run, contextFor });
+  assert.equal(out.status, 'approved');
+  assert.deepEqual(asked, [{ side: 'backend', worktree: true, contract: 'GET /hello -> { msg: string }' }]);
+  assert.match(prompts['coder-backend'][0], /Likely relevant files \(BM25 search of the backend repo/);
+  assert.doesNotMatch(prompts['coder-backend'][1], /Likely relevant files/, 'not repeated in fix rounds');
+  assert.match(readFileSync(join(out.runDir, 'backend.context.txt'), 'utf8'), /### src\/x\.js/);
+});

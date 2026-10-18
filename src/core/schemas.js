@@ -80,6 +80,16 @@ export const factoryConfig = z.object({
     // Coder notes and ignored-file contents given to the reviewer (default keeps older workspaces valid).
     contextChars: z.number().int().positive().default(4000),
   }).strict(),
+  rag: z.object({
+    enabled: z.boolean(),
+    maxFileBytes: z.number().int().positive(),
+    exclude: z.array(z.string()),
+    context: z.object({
+      maxFiles: z.number().int().min(0),
+      maxChars: z.number().int().positive(),
+      snippetLines: z.number().int().positive(),
+    }).strict(),
+  }).strict(),
   tools: z.object({
     maxOutputChars: z.number().int().positive(),
     runCommand: z.object({

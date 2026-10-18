@@ -508,3 +508,39 @@ This machine:
 - The earlier runs and worktrees in ~/Repos/Sourcerer stay there; see them with `sourcerer --root ~/Repos/Sourcerer status`.
 
 Tests: 135 (layering/precedence/sources, workspace agent override, models add/list/remove, use, migrate + rollback, setup/doctor on the new layout, session /use).
+
+## Phase 8 (BM25): repo index + coder context (done)
+
+Why: the real target repos are large (10k+ files, millions of lines; PHP, Python, Go, JS). Agent CLIs search with their own tools, so the gain is in handing coders the right starting files, not in faster grep.
+
+Built (no new dependencies):
+- src/rag/tokenize.js:
+  - Identifiers are split on camelCase, snake_case and digits, lowercased. The parts and the whole identifier are kept.
+  - Code keywords and common English words are dropped.
+  - Definition regexes for PHP (function/class/interface/trait/enum), Python (def/class), Go (func incl. methods, type) and JS/TS (function/class/interface/type/enum, const arrow/function).
+- src/rag/index.js:
+  - One index per side from the base branch's last commit: `git ls-tree -r -l -z` + one streaming `git cat-file --batch`.
+  - Per-blob analysis cache (index/blobs/<hh>/<hash>.json, shared across sides and rebuilds).
+  - Postings as a Uint32Array (doc, tf×10) + meta.json dictionary. Written atomically.
+  - Skipped when the base commit is unchanged. Field weights: path ×3, definitions +2.5.
+  - Excludes: dir/, *.ext, file names. Also binary files and files over maxFileBytes.
+- src/rag/search.js:
+  - BM25 (k1 1.2, b 0.75), max 40 query terms ranked by idf.
+  - Worktree overlay: `git diff --name-only base` + untracked files are scored from their current content, and their base entries are dropped (deleted files disappear).
+  - bestWindow picks the snippet; relevantContext respects maxFiles and maxChars.
+- Orchestrator: optional `contextFor({ side, task, plan, worktree })`. Used for the first coder pass only, and saved to runs/<id>/<side>.context.txt. executeTask provides it when rag.enabled: it updates the index, then searches with instructions + contract + task. Errors never fail a run.
+- `sourcerer index [--side] [--force] [--query --limit]` prints build stats or the ranking.
+- doctor warns when there is no index yet.
+- Config: `rag: { enabled, maxFileBytes, exclude, context: { maxFiles, maxChars, snippetLines } }`.
+- index/ is gitignored.
+- Tests: 142 (tokenizer, definitions per language, excludes, ranking + incremental by commit/blob, worktree overlay, bestWindow + budget, context only in the first pass).
+- Smoke on this repo: 88 files indexed in 0.1s, queries take about 2 ms, and the expected files ranked top.
+
+Deliberately left out:
+- The planner keyword step (your call).
+- Trigram index (agent CLIs already search fast).
+- Vector search.
+- MCP server.
+- Using the index in the API-agent search tools.
+
+Not yet measured: indexing time, size and memory on a 10k+ file repo. Run `sourcerer index` there (it prints time and size).

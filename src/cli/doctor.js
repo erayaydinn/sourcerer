@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import { createAgent } from '../core/factory.js';
+import { readMeta } from '../rag/index.js';
 import { loadProject } from './project.js';
 import { resolveRoot } from './root.js';
 import { smokeCommand } from './smoke.js';
@@ -95,6 +96,14 @@ export async function runChecks(rootFlag) {
   }
   for (const model of unpriced) checks.push(warn(`no price for ${model}`, 'cost will be "unknown"; add it under pricing: in sourcerer.yaml'));
   if (!unpriced.size) checks.push(ok('pricing covers every model that does not report cost'));
+
+  if (config.rag.enabled) {
+    for (const side of Object.keys(config.repos)) {
+      const meta = readMeta(root, side);
+      checks.push(meta ? ok(`search index ${side}: ${meta.files.length} files (built ${meta.builtAt.slice(0, 10)})`)
+        : warn(`no search index for ${side}`, 'run `sourcerer index` (otherwise it is built at the first task, which can take minutes on a large repo)'));
+    }
+  }
 
   if (await isGitRepo(root)) {
     for (const path of ['.env', 'runs/x']) {

@@ -4,3 +4,4 @@ runs/*
 worktrees/
 !runs/.gitkeep
 sourcerer.yaml
+index/

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildProgram } from '../src/cli/index.js';
+import { buildProgram } from '../src/cli/main.js';
 import { loadConfig } from '../src/core/config.js';
 import { makeRuns } from './run-history.test.js';
 

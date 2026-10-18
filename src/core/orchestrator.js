@@ -13,14 +13,15 @@ import { attachRunLogger } from './run-logger.js';
 // `pause(message)` (optional, for --interactive) resolves 'continue' | 'skip' | 'abort'.
 // `sides` (optional, from --side) fixes which sides are worked on instead of the planner's choice.
 // `signal` (optional AbortSignal) stops the run: running agents and commands are killed, logs are kept.
-export async function runTask(task, { config, agents, pricing, bus, confirm, pause, sides, signal, run = runAgent, now = new Date() }) {
+// `contextFor({ side, task, plan, worktree })` (optional) returns extra coder context, e.g. from a repo search.
+export async function runTask(task, { config, agents, pricing, bus, confirm, pause, sides, signal, contextFor, run = runAgent, now = new Date() }) {
   const slug = taskSlug(task);
   const runId = `${stamp(now)}-${slug}`;
   const runDir = join(config.paths.runs, runId);
   mkdirSync(runDir, { recursive: true });
   attachRunLogger(bus, runDir);
 
-  const ctx = { runId, runDir, worktrees: {}, config, pricing, bus, run, confirm, pause, signal, budget: createBudget(config.budget), gate: Promise.resolve(), stoppedBy: null, round: 0, lastComments: null, notes: {} };
+  const ctx = { runId, runDir, worktrees: {}, config, pricing, bus, run, confirm, pause, signal, contextFor, budget: createBudget(config.budget), gate: Promise.resolve(), stoppedBy: null, round: 0, lastComments: null, notes: {} };
   let worktrees = {};
   let status = 'failed';
   let errorText;
@@ -66,10 +67,12 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
   for (let round = 1; ; round++) {
     ctx.signal?.throwIfAborted();
     ctx.round = round;
-    await allOrThrow(Object.entries(feedback).map(([side, sideFeedback]) => {
+    await allOrThrow(Object.entries(feedback).map(async ([side, sideFeedback]) => {
       const coder = coderFor(agents, side);
       const workspace = workspaceFor(coder, worktrees, dir);
-      return callAgent(ctx, coder, coderPrompt(task, plan, side, workspace, sideFeedback), workspace, round)
+      const context = round === 1 && ctx.contextFor ? await ctx.contextFor({ side, task, plan, worktree: worktrees[side] }) : '';
+      if (context) writeFileSync(join(runDir, `${side}.context.txt`), context);
+      return callAgent(ctx, coder, coderPrompt(task, plan, side, workspace, sideFeedback, context), workspace, round)
         .then((output) => { ctx.notes[side] = output.slice(-contextChars); });
     }));
 

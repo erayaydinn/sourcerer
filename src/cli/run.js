@@ -5,6 +5,8 @@ import { createAgent } from '../core/factory.js';
 import { checkSides, runTask } from '../core/orchestrator.js';
 import { taskSlug } from '../git/worktree.js';
 import { insideTmux, launch, openLogPanes, openShellWindow, quote } from '../ui/tmux.js';
+import { buildIndex } from '../rag/index.js';
+import { relevantContext } from '../rag/search.js';
 import { printEvents, printResult } from './print.js';
 import { loadProject, reportProblems } from './project.js';
 
@@ -22,6 +24,7 @@ export async function executeTask(task, { root, llm = [], project: loaded, sides
     agents: defs.map((def) => createAgent(def, config)),
     pricing: config.pricing,
     bus, confirm, pause, sides, signal, run,
+    contextFor: config.rag.enabled ? (input) => repoContext(config, root, input, print) : undefined,
   });
   printResult(result, print);
   return result;
@@ -99,4 +102,20 @@ function openPanesOn(bus, defs, interactive, print) {
   const paneAgents = [...coders, ...defs.filter((def) => def.role === 'reviewer')].map((def) => def.name);
   bus.on('run.started', (e) => openLogPanes(e.runDir, paneAgents).catch(report));
   if (interactive) bus.on('worktrees.ready', (e) => openShellWindow(e.worktrees).catch(report));
+}
+
+// Updates the side's index (fast when the base is unchanged) and returns the coder context.
+// Search problems never fail the run: they are printed and the coder just gets no context.
+async function repoContext(config, root, { side, task, plan, worktree }, print) {
+  try {
+    const built = await buildIndex(config, root, side);
+    if (!built.upToDate) print(`  index ${side}: ${built.files} files (${built.analyzed} analyzed) in ${(built.ms / 1000).toFixed(1)}s`);
+    const query = [plan.instructions[side], plan.contract, task].join('\n');
+    const { text, files } = await relevantContext(config, root, side, query, worktree);
+    if (files.length) print(`  context ${side}: ${files.length} likely relevant files`);
+    return text;
+  } catch (error) {
+    print(`  rag ${side}: ${error instanceof Error ? error.message : error} (continuing without context)`);
+    return '';
+  }
 }

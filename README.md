@@ -103,6 +103,22 @@ The workspace is found in this order: `--root <dir>`, `SOURCERER_ROOT`, the near
 
 **Upgrading from the old layout** (a workspace with full `config/` and `agents/` copies): run `sourcerer migrate`. It keeps only your differences in `sourcerer.yaml`, keeps agents whose prompt you changed as overrides, and moves the old copies to `*.bak-<date>/`.
 
+## Code search (BM25)
+
+Large repos are the main use case, so each repo gets a BM25 index and every coder's first prompt starts with the most relevant files and snippets for its part of the task. This works with any agent CLI, and saves the agents from spending turns (and tokens) on exploration.
+
+```sh
+sourcerer index                                   # build/update both repos (also done at the start of a task)
+sourcerer index --side backend --query "rate limit login attempts"   # see the ranking
+```
+
+- **Indexed:** the base branch's last commit (`git ls-tree`). Changes in a task's worktree are overlaid at query time.
+- **Updates:** analyses are cached by git blob hash, so only changed files are read again.
+- **Ranking:** identifiers are split on camelCase and snake_case. File paths and definitions (PHP, Python, Go, JS/TS) weigh more than body text.
+- **Skipped:** `vendor/`, `node_modules/`, build output, lock files, binaries and files over `rag.maxFileBytes`. Change this with `rag:` in `sourcerer.yaml`. `rag.context` sets how many files and characters go into a prompt, and `rag.enabled: false` turns it off.
+- **Where it lives:** the index is in `<workspace>/index/`. The context each coder got is saved in `runs/<id>/<side>.context.txt`.
+- **Limits:** this is lexical search. It finds words, not meaning, and doesn't translate. The coder query is built from the planner's contract and instructions (usually English) plus the task.
+
 ## Safety notes
 
 - Agents write only inside their own worktree. The other repo is read-only, and the reviewer cannot write at all.

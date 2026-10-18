@@ -29,6 +29,17 @@ review:
   testOutputChars: 2000
   contextChars: 4000      # coder notes and ignored-file contents shown to the reviewer
 
+# BM25 search index per repo (sourcerer index), used to add likely relevant files to coder prompts.
+# Built from the base branch; worktree changes are overlaid at query time.
+rag:
+  enabled: true
+  maxFileBytes: 500000            # bigger files are skipped
+  exclude: [node_modules/, vendor/, dist/, build/, .git/, '*.min.js', '*.map', '*.lock', package-lock.json, pnpm-lock.yaml, composer.lock, go.sum]
+  context:
+    maxFiles: 8                   # files added to each coder prompt
+    maxChars: 12000               # total snippet size per prompt
+    snippetLines: 60
+
 # Limits for the built-in tools used by API agents (openai-compat, anthropic).
 tools:
   maxOutputChars: 20000
