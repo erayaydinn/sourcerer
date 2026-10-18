@@ -1,0 +1,87 @@
+# Paths are relative to the project root.
+# base: branch new worktrees start from. setup: runs once in each new worktree.
+# test (optional): run by the orchestrator after every coder pass.
+# docs: paths searched by search_docs (with the repo's commit messages).
+repos:
+  frontend:
+    path: /Users/erayaydin/Repos/ai-frontend
+    base: main
+    setup: { run: [pnpm, install, --frozen-lockfile], timeoutSec: 600 }   # needs pnpm 9+ (lockfile 9.0)
+    test: { run: [pnpm, run, build], timeoutSec: 300 }                    # no test script; build checks the code
+    docs: [docs, adr, README.md]
+  backend:
+    path: /Users/erayaydin/Repos/ai-backend
+    base: main
+    docs: [docs, adr, README.md]
+
+paths:
+  agents: ./agents
+  runs: ./runs
+  pricing: ./config/pricing.yaml
+  worktrees: ./worktrees
+
+budget:
+  maxCostPerRun: 5
+  maxCostPerAgent: 2
+
+# maxRounds: coder passes per task (1 = no fix rounds). testOutputChars: test output tail sent back to a coder.
+review:
+  maxRounds: 3
+  testOutputChars: 2000
+
+# Limits for the built-in tools used by API agents (openai-compat, anthropic).
+tools:
+  maxOutputChars: 20000
+  runCommand:
+    allow: [npm, npx, node, git]
+    timeoutSec: 300
+
+# Replace every <model> with a real model name.
+llms:
+  claude-strong:
+    type: cli
+    bin: claude
+    provider: anthropic
+    model: opus           # alias from `claude --help`
+    capabilities: { editsFiles: true, toolUse: true, jsonOutput: true, reportsCost: true }
+
+  claude-cheap:
+    type: cli
+    bin: claude
+    provider: anthropic
+    model: sonnet         # alias from `claude --help`
+    capabilities: { editsFiles: true, toolUse: true, jsonOutput: true, reportsCost: true }
+
+  codex-main:
+    type: cli
+    bin: codex
+    provider: openai
+    model: <model>
+    capabilities: { editsFiles: true, toolUse: true, jsonOutput: true }
+
+  # Model ids: docs/cli-help/cursor-agent-models.txt. Set provider to the vendor behind the model
+  # (e.g. xai for Grok) so the reviewer-vs-coder provider check means something.
+  # Cursor reports tokens but no cost: add the model to pricing.yaml or cost stays unknown.
+  cursor-main:
+    type: cli
+    bin: cursor-agent
+    provider: xai
+    model: grok-4.7-medium
+    capabilities: { editsFiles: true, toolUse: true, jsonOutput: true }
+
+  gpt-api:
+    type: openai-compat
+    provider: openai
+    baseURL: https://api.openai.com/v1
+    keyEnv: OPENAI_API_KEY
+    model: <model>
+    maxOutputTokens: 8192
+    capabilities: { toolUse: true, jsonOutput: true }
+
+  claude-api:
+    type: anthropic
+    provider: anthropic
+    keyEnv: ANTHROPIC_API_KEY
+    model: <model>
+    maxOutputTokens: 8192
+    capabilities: { editsFiles: true, toolUse: true, jsonOutput: true }

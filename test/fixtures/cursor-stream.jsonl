@@ -1,0 +1,10 @@
+{"type": "system", "subtype": "init", "model": "Grok 4.7"}
+{"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "Read note.txt and reply with its content only."}]}}
+{"type": "thinking", "subtype": "delta", "text": "..."}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "I'll read `note.txt` and reply with only its contents."}]}}
+{"type": "tool_call", "subtype": "started", "tool_call": {"globToolCall": {"args": {"globPattern": "**/note.txt"}}}}
+{"type": "tool_call", "subtype": "completed", "tool_call": {"globToolCall": {"args": {"globPattern": "**/note.txt"}, "result": {"success": {"totalLines": null}}}}}
+{"type": "tool_call", "subtype": "started", "tool_call": {"readToolCall": {"args": {"path": "/work/note.txt"}}}}
+{"type": "tool_call", "subtype": "completed", "tool_call": {"readToolCall": {"args": {"path": "/work/note.txt"}, "result": {"success": {"totalLines": 2}}}}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "hello"}]}}
+{"type": "result", "subtype": "success", "is_error": false, "duration_ms": 8692, "result": "I'll read `note.txt` and reply with only its contents.hello", "usage": {"inputTokens": 31543, "outputTokens": 153, "cacheReadTokens": 19200, "cacheWriteTokens": 0}}

@@ -1,0 +1,7 @@
+# USD per 1M tokens. Names must match the `model` in factory.config.yaml exactly,
+# otherwise costSource is 'unknown'. Fill in real prices.
+models: {}
+#  <model>:
+#    input: 0
+#    output: 0
+#    cachedInput: 0
