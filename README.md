@@ -87,6 +87,20 @@ sourcerer models remove cursor-high                # refused while an agent uses
 
 These commands edit `sourcerer.yaml` (comments are kept) and refuse to save an invalid result, e.g. a coder on a profile that cannot edit files. In the TUI: `/models`, `/agents`, `/use`.
 
+**Several models from one CLI (e.g. Cursor).** Each agent can use a different model of the same CLI:
+
+```sh
+cursor-agent models                                        # the models your account can use
+sourcerer use reviewer cursor-main --model <model>         # same profile, another model, per agent
+sourcerer models add cursor-fast --cli cursor-agent --provider <vendor> --model <model>
+sourcerer use coder cursor-fast --fallback cursor-main     # a separate profile also works as a fallback
+```
+
+- `--provider` is the vendor behind the model (e.g. `xai` for Grok, `openai`, `anthropic`), not the CLI. It drives the check that the reviewer uses a different provider than the coders.
+- A CLI that reports no cost (cursor-agent) needs a `pricing:` row per model in `sourcerer.yaml` for cost estimates. Without one, cost shows as unknown, but token limits still work.
+- `sourcerer smoke <profile>` tries the profile's own model, not one given with `use --model`. To try another model, make it a profile.
+- Which models are available, and whether one can be selected explicitly with `--model`, depends on your plan with that CLI. Check with `smoke` before a long run.
+
 **`sourcerer.yaml` sections**: `llms` (profiles, replaced by name), `agents` (`<name>: { llm, model, fallbackLlm }`), `repos` (`<side>: { base, setup, test, docs, path }`), `budget`, `review`, `tools`, `paths`, `pricing` (`<model>: { input, output, cachedInput }`, USD per 1M tokens; needed for CLIs that don't report cost). To change a prompt, put a full agent file in `<workspace>/agents/<name>.yaml`: it replaces the package's agent of that name (or adds a new agent).
 
 **Environment variables** (see `.env.example`):
@@ -102,6 +116,21 @@ These commands edit `sourcerer.yaml` (comments are kept) and refuse to save an i
 The workspace is found in this order: `--root <dir>`, `SOURCERER_ROOT`, the nearest parent folder with a `sourcerer.yaml`, then `~/.config/sourcerer` (or `$XDG_CONFIG_HOME/sourcerer`).
 
 **Upgrading from the old layout** (a workspace with full `config/` and `agents/` copies): run `sourcerer migrate`. It keeps only your differences in `sourcerer.yaml`, keeps agents whose prompt you changed as overrides, and moves the old copies to `*.bak-<date>/`.
+
+## Another machine
+
+```sh
+nvm install 22 && nvm use 22
+git clone git@github.com:erayaydinn/sourcerer.git && cd sourcerer && pnpm install && npm link
+# log in to the agent CLIs you use (claude, cursor-agent login)
+sourcerer setup          # repo paths, profile/model per role, limits
+sourcerer doctor
+```
+
+- **Defaults:** the default profiles and models come with the package. Your changes live in `~/.config/sourcerer/sourcerer.yaml`, which is not in git.
+- **Carrying your choices over:** copy `sourcerer.yaml` (it holds no secrets), or run the `models add` / `use` commands again.
+- **`.env`:** don't copy it. Repo paths differ per machine and it holds your API keys; `sourcerer setup` creates it.
+- **First task on a large repo:** it builds the search index first. Run `sourcerer index` beforehand to avoid the wait.
 
 ## Code search (BM25)
 
