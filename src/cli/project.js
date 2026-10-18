@@ -2,9 +2,9 @@ import { loadConfig } from '../core/config.js';
 import { applyLlmOverrides, loadAgents, validate } from '../core/factory.js';
 
 // Loads config + agents (with --llm overrides) and validates them.
-export function loadProject(root, llmPairs = []) {
-  const config = loadConfig(root);
-  const defs = applyLlmOverrides(loadAgents(config.paths.agents), llmPairs);
+export function loadProject(root, llmPairs = [], options = {}) {
+  const config = loadConfig(root, options);
+  const defs = applyLlmOverrides(loadAgents(root, config), llmPairs);
   return { config, defs, ...validate(defs, config) };
 }
 

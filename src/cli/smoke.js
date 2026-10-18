@@ -3,12 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAgent } from '../adapters/index.js';
 import { loadConfig } from '../core/config.js';
-import { loadPricing } from '../core/cost.js';
 
 // Calls each LLM profile once with a tiny prompt. Costs real money.
 export async function smokeCommand(profiles, { root }, print) {
   const config = loadConfig(root);
-  const pricing = loadPricing(config.paths.pricing);
+  const pricing = config.pricing;
   const cwd = mkdtempSync(join(tmpdir(), 'sourcerer-smoke-'));
   let failed = false;
 

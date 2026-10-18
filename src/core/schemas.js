@@ -54,9 +54,19 @@ function envNumber(schema) {
   }, schema);
 }
 
+// An empty value (e.g. from `${VAR:-}`) means "not set".
+const optionalText = z.preprocess((value) => (value === '' ? undefined : value), z.string().optional());
+
+const price = z.object({
+  input: z.number().nonnegative(),
+  output: z.number().nonnegative(),
+  cachedInput: z.number().nonnegative().optional(),
+}).strict();
+
+// Package defaults merged with the workspace's sourcerer.yaml (see config.js).
 export const factoryConfig = z.object({
   repos: z.object({ frontend: repo, backend: repo }).strict(),
-  paths: z.object({ agents: z.string(), runs: z.string(), pricing: z.string(), worktrees: z.string() }).strict(),
+  paths: z.object({ runs: z.string(), worktrees: z.string() }).strict(),
   budget: z.object({
     maxCostPerRun: envNumber(z.number().positive()),
     maxCostPerAgent: envNumber(z.number().positive()),
@@ -78,19 +88,15 @@ export const factoryConfig = z.object({
     }).strict(),
   }).strict(),
   llms: z.record(z.string(), llmProfile),
-}).strict();
-
-// `models:` with only commented rows below it parses as null: treat it as empty.
-export const pricingFile = z.object({
-  models: z.preprocess((value) => value ?? {}, z.record(z.string(), z.object({
-    input: z.number().nonnegative(),
-    output: z.number().nonnegative(),
-    cachedInput: z.number().nonnegative().optional(),
+  // Per-agent choices (sourcerer.yaml `agents:`), applied over the agent YAML defaults.
+  agents: z.preprocess((value) => value ?? {}, z.record(z.string(), z.object({
+    llm: optionalText,
+    model: optionalText,
+    fallbackLlm: optionalText,
   }).strict())),
+  // USD per 1M tokens, keyed by the resolved model name.
+  pricing: z.preprocess((value) => value ?? {}, z.record(z.string(), price)),
 }).strict();
-
-// `model: ${SOURCERER_CODER_MODEL:-}` resolves to '' when unset, which means "not set".
-const optionalText = z.preprocess((value) => (value === '' ? undefined : value), z.string().optional());
 
 export const agentDef = z.object({
   name: z.string(),

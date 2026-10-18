@@ -1,18 +1,19 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { PACKAGE_DIR, WORKSPACE_FILE, isLegacyWorkspace } from '../core/config.js';
 
-// The installed package: its config/ and agents/ are the templates for `sourcerer init`.
-export const PACKAGE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+export { PACKAGE_DIR };
 
-const isWorkspace = (dir) => existsSync(join(dir, 'config', 'factory.config.yaml')) && existsSync(join(dir, 'agents'));
+// A workspace has sourcerer.yaml; an old-layout one (config/ + agents/ copies) is found too, so it can be migrated.
+// The package folder itself is not a workspace unless it has its own sourcerer.yaml.
+const isWorkspace = (dir) => existsSync(join(dir, WORKSPACE_FILE)) || isLegacyWorkspace(dir);
 
 export function defaultWorkspace(env = process.env) {
   return join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'sourcerer');
 }
 
-// --root > SOURCERER_ROOT > nearest parent folder with config/ and agents/ > ~/.config/sourcerer.
+// --root > SOURCERER_ROOT > nearest parent folder with sourcerer.yaml > ~/.config/sourcerer.
 export function resolveRoot({ flag, env = process.env, cwd = process.cwd() } = {}) {
   if (flag) return resolve(flag);
   if (env.SOURCERER_ROOT) return resolve(env.SOURCERER_ROOT);

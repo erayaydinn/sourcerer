@@ -1,6 +1,8 @@
+import { agentsCommand, useCommand } from '../cli/agents.js';
 import { costCommand } from '../cli/cost.js';
 import { doctorCommand } from '../cli/doctor.js';
 import { logsCommand } from '../cli/logs.js';
+import { modelsAddCommand, modelsListCommand, modelsRemoveCommand } from '../cli/models.js';
 import { loadProject, reportProblems } from '../cli/project.js';
 import { resolveRoot } from '../cli/root.js';
 import { executeTask } from '../cli/run.js';
@@ -11,13 +13,18 @@ export const HELP = `Type a task to start it. One task runs at a time.
   /status                       recent runs
   /cost [runId] [--by agent|role|llm] [--since 7d]
   /logs [runId] [--agent name]  print a run log
+  /models                       LLM profiles and who uses them
+  /models add <name> --cli|--api <kind> --provider <p> --model <m>   add a profile (all flags needed here)
+  /models remove <name>
+  /agents                       which profile and model each agent uses
+  /use <agent|role> <profile> [--model m] [--fallback p]   save a choice in sourcerer.yaml
   /llm role=profile             session-only LLM override (/llm shows them, /llm clear removes them)
   /approve /reject              answer a budget question
   /stop                         stop the running task (also: Ctrl+C)
   /doctor                       check the setup
   /help  /exit                  (Ctrl+C twice also exits)`;
 
-export const COMMANDS = ['status', 'cost', 'logs', 'llm', 'approve', 'reject', 'stop', 'doctor', 'help', 'exit'];
+export const COMMANDS = ['status', 'cost', 'logs', 'models', 'agents', 'use', 'llm', 'approve', 'reject', 'stop', 'doctor', 'help', 'exit'];
 
 // The interactive session behind both the plain REPL and the TUI: a task queue, not a chatbot.
 // hooks: change(snapshot) on any state change, task({ task, agents, bus }) when a task starts.
@@ -102,6 +109,19 @@ export function createSession({ rootFlag, print, hooks = {}, run }) {
       const { positional, flags } = parseArgs(args);
       return logsCommand(positional[0], { root: dir, agent: flags.agent }, print);
     }),
+    models: (args) => withRoot((dir) => {
+      const [action, ...rest] = args;
+      const { positional, flags } = parseArgs(rest);
+      if (action === 'add') return modelsAddCommand(positional[0], { root: dir, ...camel(flags) }, print, null);
+      if (action === 'remove') return modelsRemoveCommand(positional[0], { root: dir }, print);
+      return modelsListCommand({ root: dir }, print);
+    }),
+    agents: () => withRoot((dir) => agentsCommand({ root: dir }, print)),
+    use: (args) => withRoot((dir) => {
+      const { positional, flags } = parseArgs(args);
+      if (positional.length < 2) return print('usage: /use <agent|role> <profile> [--model m] [--fallback p]');
+      return useCommand(positional[0], positional[1], { root: dir, model: flags.model, fallback: flags.fallback }, print);
+    }),
     llm: (args) => {
       if (!args.length) return print(state.overrides.length ? state.overrides.join('\n') : 'no overrides');
       if (args[0] === 'clear') {
@@ -154,6 +174,9 @@ export function createSession({ rootFlag, print, hooks = {}, run }) {
 
   return { handle, interrupt, snapshot, root: () => root() };
 }
+
+// { 'base-url': x } -> { baseUrl: x }
+const camel = (flags) => Object.fromEntries(Object.entries(flags).map(([key, value]) => [key.replace(/-(\w)/g, (_, c) => c.toUpperCase()), value]));
 
 // "/cost abc --by llm" -> { positional: ['abc'], flags: { by: 'llm' } }
 function parseArgs(args) {

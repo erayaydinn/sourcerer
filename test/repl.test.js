@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -21,8 +21,7 @@ async function gitRepo() {
 
 async function workspace(budget = '') {
   const root = temp('ws');
-  cpSync(new URL('../config', import.meta.url), join(root, 'config'), { recursive: true });
-  cpSync(new URL('../agents', import.meta.url), join(root, 'agents'), { recursive: true });
+  writeFileSync(join(root, 'sourcerer.yaml'), '# test workspace\n');
   writeFileSync(join(root, '.env'), `SOURCERER_FRONTEND=${await gitRepo()}\nSOURCERER_BACKEND=${await gitRepo()}\n${budget}`);
   return root;
 }
@@ -141,6 +140,23 @@ test('/llm validates and keeps a session override; /status, /cost, /help and unk
   await r.waitFor(/unknown command \/nope \(try \/help\)/);
   r.send('/help');
   await r.waitFor(/\/approve \/reject/);
+  r.send('/exit');
+  await r.closed;
+});
+
+test('/use saves a per-agent choice, /agents shows it, /models lists profiles', async () => {
+  const root = await workspace();
+  const r = repl(root, fakeRun());
+  r.send('/use coder-backend claude-cheap --model sonnet');
+  await r.waitFor(/coder-backend -> claude-cheap \(sonnet\)/);
+  r.send('/agents');
+  await r.waitFor(/coder-backend\s+coder\s+claude-cheap\s+sourcerer\.yaml\s+sonnet\s+sourcerer\.yaml/);
+  r.send('/use coder gpt-api');
+  await r.waitFor(/error: not saved: .*editsFiles: false/);
+  r.send('/models add mine --cli cursor-agent --provider xai');
+  await r.waitFor(/error: missing model/);
+  r.send('/models');
+  await r.waitFor(/claude-cheap\s+claude\s+anthropic\s+sonnet\s+package\s+\S+\s+coder-backend/);
   r.send('/exit');
   await r.closed;
 });

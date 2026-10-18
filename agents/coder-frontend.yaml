@@ -1,8 +1,7 @@
 name: coder-frontend
 role: coder
 repo: frontend
-llm: ${SOURCERER_CODER_LLM:-claude-strong}
-model: ${SOURCERER_CODER_MODEL:-}   # empty: the profile's own model
+llm: claude-strong
 fallbackLlm: claude-cheap
 tools: [read_file, write_file, run_command, search_code, find_symbol, search_docs, web_search, web_fetch]
 fileScope: { read: ["**"], write: ["**"] }

@@ -1,15 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initCommand } from '../src/cli/init.js';
 import { defaultWorkspace, resolveRoot } from '../src/cli/root.js';
 
 function workspace(dir) {
-  mkdirSync(join(dir, 'config'), { recursive: true });
-  mkdirSync(join(dir, 'agents'), { recursive: true });
-  writeFileSync(join(dir, 'config', 'factory.config.yaml'), '');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'sourcerer.yaml'), '# workspace\n');
   return dir;
 }
 
@@ -36,13 +35,13 @@ test('falls back to $XDG_CONFIG_HOME/sourcerer, else errors with a hint', () => 
   assert.equal(defaultWorkspace({ XDG_CONFIG_HOME: xdg }), join(xdg, 'sourcerer'));
 });
 
-test('init copies templates, creates .env, and never overwrites', () => {
+test('init creates sourcerer.yaml (no copies of the package), .env, and never overwrites', () => {
   const target = join(temp(), 'ws');
   const lines = [];
   initCommand(target, {}, (line) => lines.push(line));
-  for (const file of ['config/factory.config.yaml', 'config/pricing.yaml', 'agents/reviewer.yaml', '.env', '.env.example']) {
-    assert.ok(lines.includes(`create ${file}`), file);
-  }
+  for (const file of ['sourcerer.yaml', '.env', '.env.example']) assert.ok(lines.includes(`create ${file}`), file);
+  assert.ok(!existsSync(join(target, 'config')) && !existsSync(join(target, 'agents')), 'nothing copied from the package');
+  assert.match(readFileSync(join(target, 'sourcerer.yaml'), 'utf8'), /only what differs from the package defaults/);
   assert.match(readFileSync(join(target, '.env'), 'utf8'), /SOURCERER_FRONTEND=/);
   assert.equal(resolveRoot({ env: {}, cwd: target }), target);
 
@@ -52,4 +51,14 @@ test('init copies templates, creates .env, and never overwrites', () => {
   assert.ok(again.includes('skip   .env (exists)'));
   assert.ok(!again.some((line) => line.startsWith('create')));
   assert.equal(readFileSync(join(target, '.env'), 'utf8'), 'SOURCERER_FRONTEND=/mine\n');
+});
+
+test('an old-layout folder (config/ + agents/ copies) is found so it can be migrated; the package itself is not', async () => {
+  const { PACKAGE_DIR } = await import('../src/cli/root.js');
+  const legacy = temp();
+  mkdirSync(join(legacy, 'config'));
+  writeFileSync(join(legacy, 'config', 'factory.config.yaml'), '');
+  assert.equal(resolveRoot({ env: {}, cwd: legacy }), legacy);
+  const xdg = temp();
+  assert.throws(() => resolveRoot({ env: { XDG_CONFIG_HOME: xdg }, cwd: join(PACKAGE_DIR, 'src') }), /Run `sourcerer init`/);
 });

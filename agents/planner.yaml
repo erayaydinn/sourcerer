@@ -1,7 +1,6 @@
 name: planner
 role: planner
-llm: ${SOURCERER_PLANNER_LLM:-claude-strong}
-model: ${SOURCERER_PLANNER_MODEL:-}   # empty: the profile's own model
+llm: claude-strong
 fallbackLlm: claude-cheap
 tools: [read_file, search_code, find_symbol, search_docs, web_search, web_fetch]
 fileScope: { read: ["**"], write: [] }

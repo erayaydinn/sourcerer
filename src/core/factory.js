@@ -1,15 +1,39 @@
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { readYaml } from './config.js';
+import { PACKAGE_DIR, WORKSPACE_FILE, readYaml } from './config.js';
 import { agentDef } from './schemas.js';
 
 const WRITE_TOOLS = ['write_file', 'run_command'];
+// Role variables override every agent of that role (above sourcerer.yaml, below --llm).
+export const ROLE_ENV = { planner: 'PLANNER', coder: 'CODER', reviewer: 'REVIEWER' };
 
-export function loadAgents(dir) {
-  return readdirSync(dir)
-    .filter((file) => file.endsWith('.yaml'))
-    .sort()
-    .map((file) => readYaml(join(dir, file), agentDef));
+function readAgentDir(dir, source) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((file) => file.endsWith('.yaml')).sort()
+    .map((file) => ({ def: readYaml(join(dir, file), agentDef), source }));
+}
+
+// Package agents; a workspace agents/<name>.yaml replaces the agent of that name (or adds one);
+// then sourcerer.yaml `agents:` choices; then SOURCERER_<ROLE>_LLM / _MODEL.
+// Each def gets `sources` ({ llm, model }) saying where the value came from.
+export function loadAgents(rootDir, config) {
+  const byName = new Map();
+  for (const { def, source } of [...readAgentDir(join(PACKAGE_DIR, 'agents'), 'package'), ...readAgentDir(join(rootDir, 'agents'), 'agents/')]) {
+    byName.set(def.name, { ...def, sources: { llm: source, model: def.model ? source : null } });
+  }
+  for (const def of byName.values()) {
+    const choice = config.agents?.[def.name] ?? {};
+    if (choice.llm && choice.llm !== def.llm) Object.assign(def, { llm: choice.llm, model: undefined, sources: { llm: WORKSPACE_FILE, model: null } });
+    if (choice.model) Object.assign(def, { model: choice.model, sources: { ...def.sources, model: WORKSPACE_FILE } });
+    if (choice.fallbackLlm) def.fallbackLlm = choice.fallbackLlm;
+
+    const key = ROLE_ENV[def.role];
+    const envLlm = process.env[`SOURCERER_${key}_LLM`];
+    const envModel = process.env[`SOURCERER_${key}_MODEL`];
+    if (envLlm && envLlm !== def.llm) Object.assign(def, { llm: envLlm, model: undefined, sources: { llm: `SOURCERER_${key}_LLM`, model: null } });
+    if (envModel) Object.assign(def, { model: envModel, sources: { ...def.sources, model: `SOURCERER_${key}_MODEL` } });
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function validate(defs, config) {
@@ -48,8 +72,9 @@ export function validate(defs, config) {
     }
   }
 
+  const used = new Set(defs.flatMap((def) => [def.llm, def.fallbackLlm].filter(Boolean)));
   for (const [name, profile] of Object.entries(config.llms)) {
-    if ('keyEnv' in profile && profile.keyEnv && !process.env[profile.keyEnv]) {
+    if (used.has(name) && 'keyEnv' in profile && profile.keyEnv && !process.env[profile.keyEnv]) {
       warnings.push(`llm "${name}": env var ${profile.keyEnv} is not set`);
     }
   }
@@ -79,6 +104,6 @@ export function applyLlmOverrides(defs, pairs) {
   });
   return defs.map((def) => {
     const match = overrides.find((o) => o.key === def.name) ?? overrides.find((o) => o.key === def.role);
-    return match ? { ...def, llm: match.profile, model: undefined } : def;
+    return match ? { ...def, llm: match.profile, model: undefined, sources: { llm: '--llm', model: null } } : def;
   });
 }

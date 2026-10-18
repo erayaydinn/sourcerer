@@ -2,10 +2,13 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
+import { agentsCommand, useCommand } from './agents.js';
 import { costCommand } from './cost.js';
 import { doctorCommand } from './doctor.js';
 import { initCommand } from './init.js';
 import { logsCommand } from './logs.js';
+import { migrateCommand } from './migrate.js';
+import { modelsAddCommand, modelsListCommand, modelsRemoveCommand } from './models.js';
 import { startRepl } from './repl.js';
 import { resolveRoot } from './root.js';
 import { runCommand } from './run.js';
@@ -31,7 +34,7 @@ export function buildProgram({ print = console.log, result = {} } = {}) {
   };
 
   program.command('init')
-    .description('create a workspace (config, agents, .env) from the package templates')
+    .description('create a workspace: sourcerer.yaml (your choices) and .env')
     .argument('[dir]', 'folder (default: --root, SOURCERER_ROOT or ~/.config/sourcerer)')
     .action(act(initCommand, { needsRoot: false }));
 
@@ -62,6 +65,42 @@ export function buildProgram({ print = console.log, result = {} } = {}) {
     .option('--since <window>', 'all runs started within e.g. 30m, 24h, 7d')
     .option('--by <group>', 'agent, role or llm', 'agent')
     .action(act(costCommand));
+
+  const models = program.command('models')
+    .description('list LLM profiles (package + sourcerer.yaml) and who uses them')
+    .action(act(modelsListCommand));
+  models.command('add')
+    .description('add or replace a profile in sourcerer.yaml (asks for anything not given)')
+    .argument('[name]', 'profile name, e.g. cursor-high')
+    .option('--cli <bin>', 'agent CLI: claude or cursor-agent')
+    .option('--api <type>', 'API: openai-compat or anthropic')
+    .option('--provider <vendor>', 'vendor behind the model, e.g. anthropic, openai, xai')
+    .option('--model <name>', 'exact model name')
+    .option('--base-url <url>', 'openai-compat endpoint')
+    .option('--key-env <name>', 'env variable holding the API key')
+    .option('--max-output-tokens <n>', 'API output limit (required for anthropic)')
+    .option('--force', 'replace an existing profile without asking')
+    .action(act(modelsAddCommand));
+  models.command('remove')
+    .description('remove a profile from sourcerer.yaml (refused while an agent uses it)')
+    .argument('<name>', 'profile name')
+    .action(act(modelsRemoveCommand));
+
+  program.command('agents')
+    .description('which profile and model each agent uses, and where that comes from')
+    .action(act(agentsCommand));
+
+  program.command('use')
+    .description('save which profile an agent (or every agent of a role) uses, in sourcerer.yaml')
+    .argument('<agent|role>', 'e.g. coder-backend, reviewer, coder')
+    .argument('<profile>', 'profile name (see `sourcerer models`)')
+    .option('--model <name>', 'model for this agent (default: the profile\'s model)')
+    .option('--fallback <profile>', 'profile to retry with if a call fails')
+    .action(act(useCommand));
+
+  program.command('migrate')
+    .description('move an old-layout workspace (config/ and agents/ copies) to sourcerer.yaml')
+    .action(act(migrateCommand, { needsRoot: true }));
 
   program.command('doctor')
     .description('check tools, config, repos, keys (set/missing only) and pricing; exit 1 on any FAIL')

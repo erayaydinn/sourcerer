@@ -1,6 +1,5 @@
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
-import { loadPricing } from '../core/cost.js';
 import { createBus } from '../core/events.js';
 import { createAgent } from '../core/factory.js';
 import { checkSides, runTask } from '../core/orchestrator.js';
@@ -21,7 +20,7 @@ export async function executeTask(task, { root, llm = [], project: loaded, sides
   const result = await runTask(task, {
     config,
     agents: defs.map((def) => createAgent(def, config)),
-    pricing: loadPricing(config.paths.pricing),
+    pricing: config.pricing,
     bus, confirm, pause, sides, signal, run,
   });
   printResult(result, print);

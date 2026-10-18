@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -23,8 +23,7 @@ async function gitRepo() {
 
 async function workspace(extra = '') {
   const root = temp('ws');
-  cpSync(new URL('../config', import.meta.url), join(root, 'config'), { recursive: true });
-  cpSync(new URL('../agents', import.meta.url), join(root, 'agents'), { recursive: true });
+  writeFileSync(join(root, 'sourcerer.yaml'), '# test workspace\n');
   writeFileSync(join(root, '.env'), `SOURCERER_FRONTEND=${await gitRepo()}\nSOURCERER_BACKEND=${await gitRepo()}\n${extra}`);
   return root;
 }
@@ -135,9 +134,9 @@ test('TUI: budget question shows a banner and /reject stops the run', async () =
 test('TUI: a chunk that ends in Enter (paste, tmux send-keys) is typed and submitted', async () => {
   const root = await workspace();
   const app = render(h(App, { rootFlag: root, run: fakeRun(Promise.resolve()), history: join(temp('hist'), 'history') }));
-  app.stdin.write('/help\r');
-  await until(app, /Type a task to start it/);
-  assert.match(app.lastFrame(), /> \/help/);
+  app.stdin.write('/llm\r');
+  await until(app, /no overrides/);
+  assert.match(app.lastFrame(), /> \/llm/);
   app.unmount();
 });
 

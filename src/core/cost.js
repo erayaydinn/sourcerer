@@ -1,10 +1,3 @@
-import { readYaml } from './config.js';
-import { pricingFile } from './schemas.js';
-
-export function loadPricing(file) {
-  return readYaml(file, pricingFile).models;
-}
-
 // inputTokens excludes cachedTokens; cached reads are priced separately.
 export function priceUsage(model, usage, pricing) {
   const price = pricing[model];

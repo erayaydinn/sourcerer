@@ -5,6 +5,7 @@ import * as cursor from './cli/cursor.js';
 
 // Keyed by profile `bin`. codex is added once its output is verified.
 const RECIPES = { claude, 'cursor-agent': cursor };
+export const CLI_BINS = Object.keys(RECIPES);
 
 export async function runCli(profile, { prompt, system, cwd, readDirs, model, allowedTools, timeoutSec, pricing, onLog, signal }) {
   const recipe = RECIPES[profile.bin];

@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
-import { loadPricing } from '../core/cost.js';
 import { createAgent } from '../core/factory.js';
 import { loadProject } from './project.js';
 import { resolveRoot } from './root.js';
@@ -86,7 +85,7 @@ export async function runChecks(rootFlag) {
     }
   }
 
-  const pricing = loadPricing(config.paths.pricing);
+  const pricing = config.pricing;
   const agents = defs.map((def) => createAgent(def, config));
   const unpriced = new Set();
   for (const agent of agents) {
@@ -94,7 +93,7 @@ export async function runChecks(rootFlag) {
       if (profile && !profile.capabilities.reportsCost && !pricing[model]) unpriced.add(model);
     }
   }
-  for (const model of unpriced) checks.push(warn(`no price for ${model}`, 'cost will be "unknown"; add it to config/pricing.yaml'));
+  for (const model of unpriced) checks.push(warn(`no price for ${model}`, 'cost will be "unknown"; add it under pricing: in sourcerer.yaml'));
   if (!unpriced.size) checks.push(ok('pricing covers every model that does not report cost'));
 
   if (await isGitRepo(root)) {

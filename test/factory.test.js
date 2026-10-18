@@ -5,7 +5,7 @@ import { applyLlmOverrides, createAgent, validate } from '../src/core/factory.js
 
 const config = factoryConfig.parse({
   repos: { frontend: { path: '/fe', base: 'main' }, backend: { path: '/be', base: 'main' } },
-  paths: { agents: 'a', runs: 'r', pricing: 'p', worktrees: 'w' },
+  paths: { runs: 'r', worktrees: 'w' },
   budget: { maxCostPerRun: 5, maxCostPerAgent: 2 },
   review: { maxRounds: 3, testOutputChars: 2000 },
   tools: { maxOutputChars: 1000, runCommand: { allow: ['git'], timeoutSec: 10 } },

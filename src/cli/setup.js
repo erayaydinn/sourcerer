@@ -1,58 +1,74 @@
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseEnv } from 'node:util';
 import { execa } from 'execa';
 import { parse } from 'yaml';
+import { WORKSPACE_FILE, isLegacyWorkspace, loadSettings } from '../core/config.js';
 import { doctorCommand, isGitRepo, toolVersion } from './doctor.js';
 import { initCommand } from './init.js';
 import { PACKAGE_DIR, defaultWorkspace, resolveRoot } from './root.js';
+import { deleteIn, editWorkspace } from './workspace-file.js';
 
-// [role, env name part, agent file whose `llm:` holds the default]
-const ROLES = [['planner', 'PLANNER', 'planner.yaml'], ['coder', 'CODER', 'coder-backend.yaml'], ['reviewer', 'REVIEWER', 'reviewer.yaml']];
+const ROLES = ['planner', 'coder', 'reviewer'];
 
-// [label, env name, config section, config key, whole numbers only]
+// [label, config path, whole numbers only, optional]
 const LIMITS = [
-  ['max cost per run (USD)', 'SOURCERER_MAX_COST_PER_RUN', 'budget', 'maxCostPerRun', false],
-  ['max cost per agent (USD)', 'SOURCERER_MAX_COST_PER_AGENT', 'budget', 'maxCostPerAgent', false],
-  ['max rounds (coder passes per task)', 'SOURCERER_MAX_ROUNDS', 'review', 'maxRounds', true],
-  ['max tokens per run (input + output, empty = no limit)', 'SOURCERER_MAX_TOKENS_PER_RUN', 'budget', 'maxTokensPerRun', true],
-  ['max tokens per agent (input + output, empty = no limit)', 'SOURCERER_MAX_TOKENS_PER_AGENT', 'budget', 'maxTokensPerAgent', true],
+  ['max cost per run (USD)', ['budget', 'maxCostPerRun'], false, false],
+  ['max cost per agent (USD)', ['budget', 'maxCostPerAgent'], false, false],
+  ['max rounds (coder passes per task)', ['review', 'maxRounds'], true, false],
+  ['max tokens per run (input + output)', ['budget', 'maxTokensPerRun'], true, true],
+  ['max tokens per agent (input + output)', ['budget', 'maxTokensPerAgent'], true, true],
 ];
 
-// Interactive and safe to re-run: fills in only what is missing, Enter keeps the current value.
-// Writes .env (never key values), appends .gitignore, saves CLI help, adds commented pricing rows.
+// Interactive and safe to re-run: Enter keeps the value in brackets.
+// Machine-specific values (repo paths, key names) go to .env; choices (roles, limits) to sourcerer.yaml.
 export async function setupCommand({ root: flag, refresh }, print, ask) {
   const rl = ask ? null : createInterface({ input: process.stdin, output: process.stdout });
   const question = ask ?? (async (text) => (await rl.question(text)).trim());
   try {
     const root = workspaceFor(flag);
+    if (isLegacyWorkspace(root)) {
+      print(`${root} uses the old layout: run \`sourcerer migrate\` first, then setup again.`);
+      return 1;
+    }
     const changes = [];
-    if (!existsSync(join(root, 'config', 'factory.config.yaml'))) {
+    if (!existsSync(join(root, WORKSPACE_FILE))) {
       initCommand(root, {}, print);
-      changes.push('workspace created from the package templates');
+      changes.push(`${WORKSPACE_FILE} created`);
     }
     const env = envFile(join(root, '.env'), changes);
 
-    print('\nRepos');
+    print('\nRepos (saved in .env)');
     for (const side of ['frontend', 'backend']) await askRepo(side, env, question, print);
 
-    const rawConfig = parse(readFileSync(join(root, 'config', 'factory.config.yaml'), 'utf8'));
-    const llms = rawConfig.llms;
+    const { merged, user } = loadSettings(root);
+    const llms = merged.llms;
     const installed = await detectBins(llms);
-    print('\nLLM profiles (from config/factory.config.yaml):');
+    print('\nLLM profiles (package + sourcerer.yaml; add more with `sourcerer models add`):');
     for (const [name, p] of Object.entries(llms)) {
       const where = p.type === 'cli' ? `${p.bin}, ${installed.has(p.bin) ? 'installed' : 'NOT installed'}` : p.type;
-      print(`  ${name.padEnd(16)} ${where}`);
-    }
-    const chosen = [];
-    for (const [role, key, file] of ROLES) {
-      chosen.push(await askRole(role, key, roleDefault(join(root, 'agents', file), key), llms, env, question, print));
+      print(`  ${name.padEnd(16)} ${where.padEnd(28)} ${p.provider}/${p.model}`);
     }
 
-    print('\nLimits (Enter keeps the value in brackets)');
-    for (const limit of LIMITS) await askLimit(limit, rawConfig, env, question, print);
+    const edits = [];
+    const chosen = [];
+    print(`\nRoles (saved in ${WORKSPACE_FILE}; per agent: \`sourcerer use <agent> <profile>\`)`);
+    for (const role of ROLES) chosen.push(await askRole(role, root, merged, llms, question, print, edits));
+
+    print(`\nLimits (saved in ${WORKSPACE_FILE})`);
+    for (const limit of LIMITS) await askLimit(limit, merged, user, question, print, edits);
+
+    if (edits.length) {
+      editWorkspace(root, (doc) => {
+        for (const { path, value } of edits) {
+          if (value === undefined) deleteIn(doc, path);
+          else doc.setIn(path, value);
+        }
+      });
+      changes.push(...edits.map(({ path }) => `${WORKSPACE_FILE} ${path.join('.')}`));
+    }
 
     for (const { profile } of chosen) {
       const keyEnv = llms[profile].keyEnv;
@@ -61,8 +77,8 @@ export async function setupCommand({ root: flag, refresh }, print, ask) {
     }
 
     await gitignore(root, changes, print);
-    await saveCliHelp(root, llms, installed, refresh, changes);
-    pricingRows(join(root, 'config', 'pricing.yaml'), chosen, llms, changes, print);
+    await saveCliHelp(root, installed, refresh, changes);
+    pricingRows(root, chosen, llms, loadSettings(root).merged.pricing, changes, print);
 
     print(`\nChanged:${changes.length ? '' : ' nothing'}`);
     for (const change of changes) print(`  ${change}`);
@@ -128,49 +144,67 @@ async function detectBins(llms) {
   return installed;
 }
 
-// The agent YAML default from `llm: ${SOURCERER_X_LLM:-name}` (or a plain `llm: name`).
-function roleDefault(agentFile, key) {
-  const llm = parse(readFileSync(agentFile, 'utf8')).llm ?? '';
-  return llm.match(new RegExp(`\\$\\{SOURCERER_${key}_LLM:-([^}]*)\\}`))?.[1] ?? llm;
+// Agents of a role and the profile they use now: sourcerer.yaml choice, else the package agent default.
+function roleAgents(role, root, merged) {
+  const dirs = [join(PACKAGE_DIR, 'agents'), join(root, 'agents')];
+  const agents = new Map();
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue;
+    for (const file of readdirSync(dir).filter((name) => name.endsWith('.yaml')).sort()) {
+      const def = parse(readFileSync(join(dir, file), 'utf8'));
+      if (def.role === role) agents.set(def.name, def);
+    }
+  }
+  return [...agents.values()].map((def) => ({ name: def.name, llm: merged.agents?.[def.name]?.llm ?? def.llm, model: merged.agents?.[def.name]?.model }));
 }
 
-async function askRole(role, key, yamlDefault, llms, env, question, print) {
-  const llmName = `SOURCERER_${key}_LLM`;
-  const modelName = `SOURCERER_${key}_MODEL`;
-  const values = env.read();
-  const currentProfile = values[llmName] || yamlDefault;
-  let profile = currentProfile;
+async function askRole(role, root, merged, llms, question, print, edits) {
+  const agents = roleAgents(role, root, merged);
+  const current = agents[0]?.llm;
+  const envName = `SOURCERER_${role.toUpperCase()}_LLM`;
+  if (process.env[envName]) print(`  note: ${envName}=${process.env[envName]} in .env or the shell overrides this choice`);
+  let profile = current;
   for (let tries = 0; tries < 3; tries++) {
-    const answer = (await question(`${role} profile [${currentProfile}]: `)) || currentProfile;
-    if (llms[answer]) {
-      profile = answer;
-      break;
+    const answer = (await question(`${role} profile [${current}]: `)) || current;
+    if (!llms[answer]) {
+      print(`  unknown profile "${answer}" (choose one listed above)`);
+      continue;
     }
-    print(`  unknown profile "${answer}" (choose one listed above)`);
+    if (role === 'coder' && !llms[answer].capabilities?.editsFiles) {
+      print(`  "${answer}" cannot edit files, so it cannot be a coder`);
+      continue;
+    }
+    profile = answer;
+    break;
   }
-  if (profile !== currentProfile) env.set(llmName, profile);
-
   // The model is typed by the user; Enter keeps the current one. No suggestions.
-  const currentModel = values[modelName] || '';
+  const currentModel = agents[0]?.model ?? '';
   const keep = currentModel ? `keeps ${currentModel}` : `keeps the profile's configured model (${llms[profile].model})`;
   const model = await question(`${role} model (Enter ${keep}): `);
-  if (model && model !== currentModel) env.set(modelName, model);
-  return { role, profile, model: model || currentModel || llms[profile].model };
+  for (const agent of agents) {
+    if (profile !== agent.llm) {
+      edits.push({ path: ['agents', agent.name, 'llm'], value: profile });
+      if (!model && agent.model) edits.push({ path: ['agents', agent.name, 'model'], value: undefined });
+    }
+    if (model && model !== agent.model) edits.push({ path: ['agents', agent.name, 'model'], value: model });
+  }
+  return { role, profile, model: model || (profile === current ? currentModel : '') || llms[profile].model };
 }
 
-// The config value is `${NAME:-default}` (or a plain number); .env wins when it is set.
-async function askLimit([label, name, section, key, whole], rawConfig, env, question, print) {
-  const raw = String(rawConfig[section]?.[key] ?? '');
-  const fallback = raw.match(new RegExp(`\\$\\{${name}:-([^}]*)\\}`))?.[1] ?? raw;
-  const current = env.read()[name] || '';
-  const shown = current || fallback || 'no limit';
+async function askLimit([label, path, whole, optional], merged, user, question, print, edits) {
+  const current = path.reduce((node, key) => node?.[key], merged);
+  const fromUser = path.reduce((node, key) => node?.[key], user);
+  const shown = current ?? 'no limit';
   for (let tries = 0; tries < 3; tries++) {
-    const answer = await question(`${label} [${shown}]: `);
-    if (!answer || answer === shown) return;
-    if (answer === 'none' && current) return env.set(name, ''); // remove an optional limit
+    const answer = await question(`${label}${optional ? ', none = no limit' : ''} [${shown}]: `);
+    if (!answer || answer === String(shown)) return;
+    if (answer === 'none' && optional) {
+      if (fromUser !== undefined) edits.push({ path, value: undefined });
+      return;
+    }
     const value = Number(answer);
     const valid = whole ? Number.isInteger(value) && value >= 1 : Number.isFinite(value) && value > 0;
-    if (valid) return env.set(name, answer);
+    if (valid) return edits.push({ path, value });
     print(`  "${answer}" is not ${whole ? 'a whole number of at least 1' : 'a positive number'}`);
   }
 }
@@ -180,7 +214,7 @@ async function gitignore(root, changes, print) {
     print('\n.gitignore: workspace is not a git repo, skipped');
     return;
   }
-  for (const [path, line] of [['.env', '.env'], ['runs/x', 'runs/']]) {
+  for (const [path, line] of [['.env', '.env'], ['runs/x', 'runs/'], ['worktrees/x', 'worktrees/'], [WORKSPACE_FILE, WORKSPACE_FILE]]) {
     const ignored = (await execa('git', ['-C', root, 'check-ignore', '-q', path], { reject: false })).exitCode === 0;
     if (ignored) continue;
     const file = join(root, '.gitignore');
@@ -190,7 +224,7 @@ async function gitignore(root, changes, print) {
   }
 }
 
-async function saveCliHelp(root, llms, installed, refresh, changes) {
+async function saveCliHelp(root, installed, refresh, changes) {
   for (const bin of installed) {
     const file = join(root, 'docs', 'cli-help', `${bin}.txt`);
     if (existsSync(file) && !refresh) continue;
@@ -201,21 +235,18 @@ async function saveCliHelp(root, llms, installed, refresh, changes) {
   }
 }
 
-// Commented rows for models whose CLI/API does not report cost. Prices are typed in by the user.
-function pricingRows(file, chosen, llms, changes, print) {
-  let text = readFileSync(file, 'utf8');
-  if (/^models:\s*\{\s*\}\s*$/m.test(text)) {
-    text = text.replace(/^models:\s*\{\s*\}\s*$/m, 'models:');
-    writeFileSync(file, text);
+// Commented price rows for chosen models whose CLI/API does not report cost. Prices are typed by the user.
+function pricingRows(root, chosen, llms, priced, changes, print) {
+  const file = join(root, WORKSPACE_FILE);
+  const text = readFileSync(file, 'utf8');
+  const needed = [...new Set(chosen.filter((c) => !llms[c.profile].capabilities?.reportsCost).map((c) => c.model))]
+    .filter((model) => !priced?.[model]);
+  if (!needed.length) return;
+  const rows = needed.filter((model) => !text.includes(`#   ${model}:`));
+  if (rows.length && !/^pricing:/m.test(text)) {
+    const header = text.includes('# pricing:  (fill in') ? '' : '\n# pricing:  (fill in USD per 1M tokens from the provider\'s pricing page, then uncomment)\n';
+    appendFileSync(file, `${header}${rows.map((model) => `#   ${model}: { input: , output: , cachedInput: }\n`).join('')}`);
+    changes.push(...rows.map((model) => `${WORKSPACE_FILE} pricing row for ${model} (commented)`));
   }
-  const priced = parse(text)?.models ?? {};
-  const needed = [...new Set(chosen.filter((c) => !llms[c.profile].capabilities?.reportsCost).map((c) => c.model))];
-  const rows = needed.filter((model) => !priced[model] && !text.includes(`#  ${model}:`));
-  for (const model of rows) {
-    appendFileSync(file, `${text.endsWith('\n') ? '' : '\n'}#  ${model}: { input: , output: , cachedInput: }   # USD per 1M tokens\n`);
-    text = readFileSync(file, 'utf8');
-    changes.push(`config/pricing.yaml row for ${model} (commented)`);
-  }
-  const missing = needed.filter((model) => !priced[model]);
-  if (missing.length) print(`\nPricing: fill in ${missing.join(', ')} in ${file} from the providers' pricing pages, then uncomment.`);
+  print(`\nPricing: ${needed.join(', ')} report no cost; add prices under pricing: in ${file}, or cost stays "unknown".`);
 }

@@ -23,7 +23,7 @@ Every agent can use a different model and CLI. Supported adapters: the `claude` 
 
 ```sh
 npm install -g @erayaydinn/sourcerer      # or: pnpm add -g @erayaydinn/sourcerer
-sourcerer init            # creates ~/.config/sourcerer (config/, agents/, .env)
+sourcerer init            # creates ~/.config/sourcerer (sourcerer.yaml, .env)
 ```
 
 Edit `~/.config/sourcerer/.env`:
@@ -63,31 +63,45 @@ Run ids accept a unique prefix and default to the latest run.
 
 ## Configuration
 
-A workspace holds `config/factory.config.yaml`, `config/pricing.yaml`, `agents/*.yaml` and `.env`. Runs (`runs/`) and worktrees (`worktrees/`) are created inside it.
+Prompts, tools, default LLM profiles and limits ship with the package, so updates reach you. Your workspace (`~/.config/sourcerer` by default) holds only your choices:
 
-The workspace is found in this order:
+```
+sourcerer.yaml   what you changed (profiles, per-agent choices, limits, prices, repo commands)
+.env             machine-specific values and secrets (repo paths, API keys); never committed
+runs/  worktrees/  history
+```
 
-1. `--root <dir>`
-2. `SOURCERER_ROOT`
-3. the nearest parent folder that has `config/` and `agents/`
-4. `~/.config/sourcerer` (or `$XDG_CONFIG_HOME/sourcerer`)
+Precedence, strongest first: `--llm` → `.env` / shell variables → `sourcerer.yaml` → package defaults.
 
-Any YAML value can come from the environment with `${VAR}` or `${VAR:-default}`. Shell variables win over `.env`. The main ones:
+**Choose models per agent**
+
+```sh
+sourcerer models                                   # profiles, where they come from, who uses them
+sourcerer models add cursor-high --cli cursor-agent --provider xai --model grok-4.7-high
+sourcerer use coder-backend cursor-high            # one agent
+sourcerer use reviewer claude-strong --model opus --fallback claude-cheap
+sourcerer use coder claude-cheap                   # every agent of a role
+sourcerer agents                                   # agent -> profile -> model, and where each value comes from
+sourcerer models remove cursor-high                # refused while an agent uses it
+```
+
+These commands edit `sourcerer.yaml` (comments are kept) and refuse to save an invalid result, e.g. a coder on a profile that cannot edit files. In the TUI: `/models`, `/agents`, `/use`.
+
+**`sourcerer.yaml` sections**: `llms` (profiles, replaced by name), `agents` (`<name>: { llm, model, fallbackLlm }`), `repos` (`<side>: { base, setup, test, docs, path }`), `budget`, `review`, `tools`, `paths`, `pricing` (`<model>: { input, output, cachedInput }`, USD per 1M tokens; needed for CLIs that don't report cost). To change a prompt, put a full agent file in `<workspace>/agents/<name>.yaml`: it replaces the package's agent of that name (or adds a new agent).
+
+**Environment variables** (see `.env.example`):
 
 | Variable | Meaning | Default |
 |---|---|---|
 | `SOURCERER_FRONTEND`, `SOURCERER_BACKEND` | repo paths | required |
-| `SOURCERER_{PLANNER,CODER,REVIEWER}_LLM` | LLM profile per role | the agent YAML's |
-| `SOURCERER_{PLANNER,CODER,REVIEWER}_MODEL` | model per role | the profile's model |
+| `SOURCERER_{PLANNER,CODER,REVIEWER}_LLM` / `_MODEL` | profile / model for every agent of a role (good for one-off runs) | from `sourcerer.yaml` / package |
 | `SOURCERER_MAX_COST_PER_RUN`, `SOURCERER_MAX_COST_PER_AGENT` | budget in USD | 5, 2 |
 | `SOURCERER_MAX_ROUNDS` | coder passes per task | 3 |
 | `SOURCERER_MAX_TOKENS_PER_RUN`, `SOURCERER_MAX_TOKENS_PER_AGENT` | token limits (input + output, not cache reads) | none |
 
-See `.env.example` for the full list. Per repo you can also set a `setup` command (run once in each new worktree) and a `test` command (run after every coder pass).
+The workspace is found in this order: `--root <dir>`, `SOURCERER_ROOT`, the nearest parent folder with a `sourcerer.yaml`, then `~/.config/sourcerer` (or `$XDG_CONFIG_HOME/sourcerer`).
 
-**Adding an agent** means adding a YAML file to `agents/`. **Adding a model** means adding a profile under `llms:` in `factory.config.yaml`. To get cost estimates for CLIs that don't report cost, add the model's prices to `pricing.yaml`.
-
-`sourcerer init` never overwrites existing files, so you can run it again after an update to pick up new templates.
+**Upgrading from the old layout** (a workspace with full `config/` and `agents/` copies): run `sourcerer migrate`. It keeps only your differences in `sourcerer.yaml`, keeps agents whose prompt you changed as overrides, and moves the old copies to `*.bak-<date>/`.
 
 ## Safety notes
 

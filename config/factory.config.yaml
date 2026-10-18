@@ -1,35 +1,31 @@
-# Paths are relative to the project root. ${VAR} and ${VAR:-default} come from the environment / .env.
-# base: branch new worktrees start from. setup: runs once in each new worktree.
-# test (optional): run by the orchestrator after every coder pass.
-# docs: paths searched by search_docs (with the repo's commit messages).
+# Package defaults. Do not edit your settings here: put only what you change in your
+# workspace's sourcerer.yaml (see `sourcerer init`, `sourcerer models`, `sourcerer use`).
+# Precedence: --llm > .env / shell variables > sourcerer.yaml > these defaults.
+
+# Repo paths come from SOURCERER_FRONTEND / SOURCERER_BACKEND (.env) or repos.<side>.path in sourcerer.yaml.
+# base: branch new worktrees start from. setup (optional): runs once in each new worktree.
+# test (optional): run by the orchestrator after every coder pass. docs: paths searched by search_docs.
 repos:
   frontend:
-    path: ${SOURCERER_FRONTEND}
     base: main
-    setup: { run: [pnpm, install, --frozen-lockfile], timeoutSec: 600 }   # needs pnpm 9+ (lockfile 9.0)
-    test: { run: [pnpm, run, build], timeoutSec: 300 }                    # no test script; build checks the code
     docs: [docs, adr, README.md]
   backend:
-    path: ${SOURCERER_BACKEND}
     base: main
     docs: [docs, adr, README.md]
 
+# Relative to the workspace.
 paths:
-  agents: ./agents
   runs: ./runs
-  pricing: ./config/pricing.yaml
   worktrees: ./worktrees
 
-# Token limits count input + output tokens (not cache reads); empty = no token limit.
+# USD. Token limits count input + output tokens (not cache reads); unset = no token limit.
 budget:
-  maxCostPerRun: ${SOURCERER_MAX_COST_PER_RUN:-5}
-  maxCostPerAgent: ${SOURCERER_MAX_COST_PER_AGENT:-2}
-  maxTokensPerRun: ${SOURCERER_MAX_TOKENS_PER_RUN:-}
-  maxTokensPerAgent: ${SOURCERER_MAX_TOKENS_PER_AGENT:-}
+  maxCostPerRun: 5
+  maxCostPerAgent: 2
 
 # maxRounds: coder passes per task (1 = no fix rounds). testOutputChars: test output tail sent back to a coder.
 review:
-  maxRounds: ${SOURCERER_MAX_ROUNDS:-3}
+  maxRounds: 3
   testOutputChars: 2000
   contextChars: 4000      # coder notes and ignored-file contents shown to the reviewer
 
@@ -40,7 +36,10 @@ tools:
     allow: [npm, npx, node, git]
     timeoutSec: 300
 
-# Replace every <model> with a real model name.
+# USD per 1M tokens, keyed by model name. Models whose CLI/API does not report cost need a row, else cost is unknown.
+pricing: {}
+
+# Profiles with a <model> placeholder need a model before use (sourcerer models add / sourcerer use --model).
 llms:
   claude-strong:
     type: cli
@@ -63,9 +62,8 @@ llms:
     model: <model>
     capabilities: { editsFiles: true, toolUse: true, jsonOutput: true }
 
-  # Model ids: docs/cli-help/cursor-agent-models.txt. Set provider to the vendor behind the model
-  # (e.g. xai for Grok) so the reviewer-vs-coder provider check means something.
-  # Cursor reports tokens but no cost: add the model to pricing.yaml or cost stays unknown.
+  # Model ids: `cursor-agent models`. provider is the vendor behind the model (xai for Grok).
+  # Cursor reports tokens but no cost: add the model under pricing or cost stays unknown.
   cursor-main:
     type: cli
     bin: cursor-agent

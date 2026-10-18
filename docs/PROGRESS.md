@@ -472,3 +472,39 @@ Suggestion, not done: give coders a fallback on another account/provider (e.g. `
 - Tests: 126 total.
 
 Limit: like cost, the token check runs after a call ends, so one long call can go over it.
+
+## Package defaults vs workspace choices (done)
+
+Why: workspaces held full copies of config/ and agents/, so package updates (prompts, new profiles) never reached them, and running inside the repo edited the package's own templates.
+
+New layout:
+- Package (read at runtime): config/factory.config.yaml (plain defaults, no `${…}`, no repo paths, `pricing: {}`) and agents/*.yaml (plain `llm:` defaults). config/pricing.yaml is removed; prices live in the `pricing` section.
+- Workspace: `sourcerer.yaml` (only your differences), `.env` (paths, keys), runs/, worktrees/, history.
+  - An optional `<workspace>/agents/<name>.yaml` replaces that package agent, or adds a new one.
+- Precedence: `--llm` > env/shell > sourcerer.yaml > package.
+  - Env is applied in code: ENV_SETTINGS in config.js for paths and limits, ROLE_ENV in factory.js for SOURCERER_<ROLE>_LLM/_MODEL.
+  - A profile change at any layer drops the lower layers' model, which belonged to the old profile.
+  - Each agent def has `sources` ({ llm, model }) for `sourcerer agents`.
+- sourcerer.yaml merge: `llms` and `pricing` replace by name; other sections deep-merge (arrays replace). Unknown sections are an error.
+- Workspace detection: a folder with sourcerer.yaml. An old-layout folder is detected so it can be migrated. The package folder (this repo) is not a workspace unless it has its own sourcerer.yaml, which is gitignored. So running inside the repo uses ~/.config/sourcerer.
+- Missing repo paths give a clear error. `allowMissingRepos` lets models/agents/use work before setup.
+- validate only warns about missing keys for profiles an agent actually uses (that warning used to repeat at every task start).
+
+Commands:
+- `sourcerer models` lists profiles (kind, provider, model, from, installed, used by).
+- `models add [name] --cli|--api --provider --model [--base-url --key-env --max-output-tokens --force]`: interactive when flags are missing. For cursor-agent it shows `cursor-agent models` as a reference; model names are always typed by the user.
+- `models remove`: refused while an agent uses the profile, and refused for package profiles.
+- `sourcerer agents` shows the agent → profile → model table with sources.
+- `sourcerer use <agent|role> <profile> [--model] [--fallback]` warns when an env variable overrides the choice.
+- `sourcerer migrate` writes only the differences to sourcerer.yaml (`${X:-d}` defaults are compared as d), keeps agents with changed prompts/tools as overrides, moves the old copies to `*.bak-<stamp>/`, and verifies the result (restores everything if it fails).
+- All of these edit sourcerer.yaml through the yaml Document API (workspace-file.js): comments are kept, the result is reloaded and validated, and an invalid one is restored.
+- `init` creates a commented sourcerer.yaml + .env (no copies).
+- `setup` writes paths and key names to .env, and roles (per agent of the role) plus limits to sourcerer.yaml; it refuses coder profiles that can't edit files, and adds .gitignore lines for .env, runs/, worktrees/ and sourcerer.yaml.
+- TUI/REPL: /models, /models add (flags only), /models remove, /agents, /use.
+- .env.example: repo paths are empty placeholders now. The old example values counted as "set" and hid the missing-path error.
+
+This machine:
+- ~/.config/sourcerer migrated: sourcerer.yaml has only the frontend pnpm setup/test. The old copies are in config.bak-20261018T211758/ and agents.bak-20261018T211758/.
+- The earlier runs and worktrees in ~/Repos/Sourcerer stay there; see them with `sourcerer --root ~/Repos/Sourcerer status`.
+
+Tests: 135 (layering/precedence/sources, workspace agent override, models add/list/remove, use, migrate + rollback, setup/doctor on the new layout, session /use).

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildProgram } from '../src/cli/index.js';
@@ -9,8 +9,7 @@ import { makeRuns } from './run-history.test.js';
 
 // A temp project root: the repo's config and agents, plus fake runs.
 const root = mkdtempSync(join(tmpdir(), 'sourcerer-cli-'));
-cpSync(new URL('../config', import.meta.url), join(root, 'config'), { recursive: true });
-cpSync(new URL('../agents', import.meta.url), join(root, 'agents'), { recursive: true });
+writeFileSync(join(root, 'sourcerer.yaml'), '# test workspace\n');
 renameSync(makeRuns(), join(root, 'runs'));
 writeFileSync(join(root, '.env'), 'SOURCERER_FRONTEND=/tmp/fe\nSOURCERER_BACKEND=/tmp/be\n');
 
@@ -85,11 +84,11 @@ test('--llm wins over the role env vars and drops the env model', async () => {
 });
 
 test('budget and round limits come from env as numbers, with YAML defaults', () => {
-  assert.deepEqual([loadConfig(root).budget, loadConfig(root).review.maxRounds], [{ maxCostPerRun: 5, maxCostPerAgent: 2, maxTokensPerRun: undefined, maxTokensPerAgent: undefined }, 3]);
+  assert.deepEqual([loadConfig(root).budget, loadConfig(root).review.maxRounds], [{ maxCostPerRun: 5, maxCostPerAgent: 2 }, 3]);
   Object.assign(process.env, { SOURCERER_MAX_COST_PER_RUN: '1.5', SOURCERER_MAX_COST_PER_AGENT: '0.5', SOURCERER_MAX_ROUNDS: '1' });
   try {
     const config = loadConfig(root);
-    assert.deepEqual(config.budget, { maxCostPerRun: 1.5, maxCostPerAgent: 0.5, maxTokensPerRun: undefined, maxTokensPerAgent: undefined });
+    assert.deepEqual(config.budget, { maxCostPerRun: 1.5, maxCostPerAgent: 0.5 });
     assert.equal(config.review.maxRounds, 1);
     process.env.SOURCERER_MAX_ROUNDS = 'three';
     assert.throws(() => loadConfig(root), /maxRounds/);
