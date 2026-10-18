@@ -21,7 +21,7 @@
     "type": "git",
     "url": "git+ssh://git@github.com/erayaydinn/sourcerer.git"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "publishConfig": {
     "access": "public"
   },

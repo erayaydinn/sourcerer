@@ -103,3 +103,7 @@ pnpm test && pnpm lint
 ```
 
 Inside the clone, `sourcerer` uses the clone itself as its workspace (rule 3 above).
+
+## License
+
+MIT, see [LICENSE](LICENSE).

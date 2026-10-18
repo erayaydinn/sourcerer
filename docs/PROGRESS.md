@@ -312,7 +312,7 @@ Limits from env as well:
 - README.md (English): install, init, usage, configuration, safety notes, development.
 - Tests: 97 total (root resolution, init copy/skip/.env).
 - Verified (free): `npm pack`, then install into a temp prefix, `init` into a temp XDG_CONFIG_HOME, validate, and a fake-claude run from another folder. runs/ and worktrees/ were created in the workspace and the package folder stayed clean.
-- This machine: `sourcerer init` created ~/.config/sourcerer, and its .env has the ai-frontend/ai-backend paths. Outside the repo, `sourcerer` uses that workspace. Inside ~/Repos/Sourcerer it still uses the repo, which keeps the earlier run history (login-alt-yapisi-kur).
+- This machine: `sourcerer init` created ~/.config/sourcerer, and its .env has the frontend/backend paths. Outside the repo, `sourcerer` uses that workspace. Inside ~/Repos/Sourcerer it still uses the repo, which keeps the earlier run history (login-task).
 
 Not done: `npm publish` (needs your npm login and explicit go).
 
@@ -324,9 +324,9 @@ Not done: `npm publish` (needs your npm login and explicit go).
   - Newer majors available, not taken: commander 15, execa 10, openai 7, eslint 10 / @eslint/js 10.
 - Dev link: `npm link` still works with the pnpm-installed node_modules (it only symlinks the bin; verified with a temp global prefix). `pnpm link --global` failed in the sandbox over the global store location, so the README uses npm link.
 
-## Reviewer context (done), after the login-alt-yapisi-kur review
+## Reviewer context (done), after the login-task review
 
-Why: the reviewer approved, but it missed two deploy blockers. (1) The coder edited .gitignore and exclude-list.txt, which are gitignored themselves, so the changes were invisible in the diff and won't be committed. (2) The new deploy exclusions leave no way to create the tables on the server. The reviewer did read both files, but its mandate was "diffs vs the contract". It got no git state and no coder notes (the coder had flagged the problem), and being read-only it couldn't run git or tests.
+Why: the reviewer approved, but it missed two deploy blockers. (1) The coder edited .gitignore and the deploy exclude list, which are gitignored themselves, so the changes were invisible in the diff and won't be committed. (2) The new deploy exclusions leave no way to create the tables on the server. The reviewer did read both files, but its mandate was "diffs vs the contract". It got no git state and no coder notes (the coder had flagged the problem), and being read-only it couldn't run git or tests.
 
 Changes:
 1. Git state: `ignoredFiles(dir, maxChars)` in src/git/worktree.js. The reviewer prompt lists ignored files (folders collapsed, max 50) with the text of small text files, marked "not in the diff, NOT committed by git".
@@ -337,7 +337,7 @@ Changes:
    - Verify the coder notes.
 4. Test context: the reviewer sees the exact test command and that it ran only on this machine, or "no test command configured; the coder's own test claims are unverified".
 - Each round's reviewer prompt is saved to runs/<id>/reviewer.r<N>.prompt.txt, so "what did the reviewer see" can be answered later.
-- Tests: 99 total. Verified on the real worktree: .gitignore and exclude-list.txt now show in the reviewer prompt with their contents.
+- Tests: 99 total. Verified on the real worktree: .gitignore and the deploy exclude list now show in the reviewer prompt with their contents.
 
 ## Phase 7 follow-up: REPL, doctor, setup, stop (done)
 
@@ -434,7 +434,7 @@ Known issues:
 - Config warnings for unused profiles (missing keys) still appear at each task start. doctor tells them apart; validate does not.
 - A very small terminal squeezes the panels (no minimum-size check).
 
-## CLI failures and TUI wrapping (done), after run-side-frontend-login-sayfasi-yap
+## CLI failures and TUI wrapping (done), after frontend-login-task
 
 What happened: the Claude subscription hit its 5-hour session limit during the frontend coder. Claude said "You've hit your session limit · resets 11:40pm".
 - The error shown was execa's message, which is the whole stdout (6.5k characters of stream JSON).
