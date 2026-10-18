@@ -12,6 +12,15 @@ import { PACKAGE_DIR, defaultWorkspace, resolveRoot } from './root.js';
 // [role, env name part, agent file whose `llm:` holds the default]
 const ROLES = [['planner', 'PLANNER', 'planner.yaml'], ['coder', 'CODER', 'coder-backend.yaml'], ['reviewer', 'REVIEWER', 'reviewer.yaml']];
 
+// [label, env name, config section, config key, whole numbers only]
+const LIMITS = [
+  ['max cost per run (USD)', 'SOURCERER_MAX_COST_PER_RUN', 'budget', 'maxCostPerRun', false],
+  ['max cost per agent (USD)', 'SOURCERER_MAX_COST_PER_AGENT', 'budget', 'maxCostPerAgent', false],
+  ['max rounds (coder passes per task)', 'SOURCERER_MAX_ROUNDS', 'review', 'maxRounds', true],
+  ['max tokens per run (input + output, empty = no limit)', 'SOURCERER_MAX_TOKENS_PER_RUN', 'budget', 'maxTokensPerRun', true],
+  ['max tokens per agent (input + output, empty = no limit)', 'SOURCERER_MAX_TOKENS_PER_AGENT', 'budget', 'maxTokensPerAgent', true],
+];
+
 // Interactive and safe to re-run: fills in only what is missing, Enter keeps the current value.
 // Writes .env (never key values), appends .gitignore, saves CLI help, adds commented pricing rows.
 export async function setupCommand({ root: flag, refresh }, print, ask) {
@@ -29,7 +38,8 @@ export async function setupCommand({ root: flag, refresh }, print, ask) {
     print('\nRepos');
     for (const side of ['frontend', 'backend']) await askRepo(side, env, question, print);
 
-    const llms = parse(readFileSync(join(root, 'config', 'factory.config.yaml'), 'utf8')).llms;
+    const rawConfig = parse(readFileSync(join(root, 'config', 'factory.config.yaml'), 'utf8'));
+    const llms = rawConfig.llms;
     const installed = await detectBins(llms);
     print('\nLLM profiles (from config/factory.config.yaml):');
     for (const [name, p] of Object.entries(llms)) {
@@ -40,6 +50,9 @@ export async function setupCommand({ root: flag, refresh }, print, ask) {
     for (const [role, key, file] of ROLES) {
       chosen.push(await askRole(role, key, roleDefault(join(root, 'agents', file), key), llms, env, question, print));
     }
+
+    print('\nLimits (Enter keeps the value in brackets)');
+    for (const limit of LIMITS) await askLimit(limit, rawConfig, env, question, print);
 
     for (const { profile } of chosen) {
       const keyEnv = llms[profile].keyEnv;
@@ -143,6 +156,23 @@ async function askRole(role, key, yamlDefault, llms, env, question, print) {
   const model = await question(`${role} model (Enter ${keep}): `);
   if (model && model !== currentModel) env.set(modelName, model);
   return { role, profile, model: model || currentModel || llms[profile].model };
+}
+
+// The config value is `${NAME:-default}` (or a plain number); .env wins when it is set.
+async function askLimit([label, name, section, key, whole], rawConfig, env, question, print) {
+  const raw = String(rawConfig[section]?.[key] ?? '');
+  const fallback = raw.match(new RegExp(`\\$\\{${name}:-([^}]*)\\}`))?.[1] ?? raw;
+  const current = env.read()[name] || '';
+  const shown = current || fallback || 'no limit';
+  for (let tries = 0; tries < 3; tries++) {
+    const answer = await question(`${label} [${shown}]: `);
+    if (!answer || answer === shown) return;
+    if (answer === 'none' && current) return env.set(name, ''); // remove an optional limit
+    const value = Number(answer);
+    const valid = whole ? Number.isInteger(value) && value >= 1 : Number.isFinite(value) && value > 0;
+    if (valid) return env.set(name, answer);
+    print(`  "${answer}" is not ${whole ? 'a whole number of at least 1' : 'a positive number'}`);
+  }
 }
 
 async function gitignore(root, changes, print) {

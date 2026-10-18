@@ -27,21 +27,35 @@ export function addUsage(total, usage) {
 }
 
 export function createBudget(limits) {
-  return { limits, totalUsd: 0, perAgent: {} };
+  return { limits, totalUsd: 0, perAgent: {}, totalTokens: 0, perAgentTokens: {} };
 }
 
-// Unknown cost (null) counts as 0.
-export function addCost(budget, agent, costUsd) {
+// The tokens a token limit counts: input + output, not cache reads.
+export function countedTokens(usage) {
+  return usage ? usage.inputTokens + usage.outputTokens : 0;
+}
+
+// Unknown cost (null) and unknown usage count as 0.
+export function addCost(budget, agent, costUsd, usage = null) {
   budget.totalUsd += costUsd ?? 0;
   budget.perAgent[agent] = (budget.perAgent[agent] ?? 0) + (costUsd ?? 0);
+  budget.totalTokens += countedTokens(usage);
+  budget.perAgentTokens[agent] = (budget.perAgentTokens[agent] ?? 0) + countedTokens(usage);
 }
 
-// Returns a message if a limit is exceeded, otherwise null.
+// Returns a message if a limit is exceeded, otherwise null. Token limits are optional.
 export function overBudget(budget, agent) {
-  const { maxCostPerRun, maxCostPerAgent } = budget.limits;
+  const { maxCostPerRun, maxCostPerAgent, maxTokensPerRun, maxTokensPerAgent } = budget.limits;
+  const tokens = (n) => n.toLocaleString('en-US');
   if (budget.totalUsd > maxCostPerRun) return `run cost $${budget.totalUsd.toFixed(2)} is over maxCostPerRun $${maxCostPerRun}`;
   if (budget.perAgent[agent] > maxCostPerAgent) {
     return `${agent} cost $${budget.perAgent[agent].toFixed(2)} is over maxCostPerAgent $${maxCostPerAgent}`;
+  }
+  if (maxTokensPerRun && budget.totalTokens > maxTokensPerRun) {
+    return `run used ${tokens(budget.totalTokens)} tokens, over maxTokensPerRun ${tokens(maxTokensPerRun)}`;
+  }
+  if (maxTokensPerAgent && budget.perAgentTokens[agent] > maxTokensPerAgent) {
+    return `${agent} used ${tokens(budget.perAgentTokens[agent])} tokens, over maxTokensPerAgent ${tokens(maxTokensPerAgent)}`;
   }
   return null;
 }

@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { countedTokens } from './cost.js';
 import { EVENTS } from './events.js';
 
 // Writes runs/<id>/: orchestrator.log, <agent>.log (live), <agent>.json and summary.json.
@@ -50,9 +51,11 @@ export function attachRunLogger(bus, runDir) {
 function summarize(event, calls) {
   const perAgent = {};
   const perLlm = {};
+  const tokensPerAgent = {};
   for (const call of calls) {
     perAgent[call.agent] = (perAgent[call.agent] ?? 0) + (call.costUsd ?? 0);
     perLlm[call.llm] = (perLlm[call.llm] ?? 0) + (call.costUsd ?? 0);
+    tokensPerAgent[call.agent] = (tokensPerAgent[call.agent] ?? 0) + countedTokens(call.usage);
   }
   return {
     runId: event.runId,
@@ -61,6 +64,8 @@ function summarize(event, calls) {
     totalUsd: event.totalUsd,
     perAgent,
     perLlm,
+    totalTokens: event.totalTokens,
+    tokensPerAgent,
     unknownCostCalls: calls.filter((call) => call.costSource === 'unknown').length,
     rounds: event.rounds,
     reviewRounds: calls.filter((call) => call.role === 'reviewer' && call.status === 'ok').length,

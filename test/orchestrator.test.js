@@ -445,3 +445,19 @@ test('a rate-limited failure counts its cost and skips a fallback on the same CL
   assert.equal(summary.perAgent['coder-backend'], 0.21);
   assert.equal(summary.totalUsd, 0.5 + 0.21);
 });
+
+test('a token limit pauses the run like a cost limit; unknown-cost calls still count tokens', async () => {
+  const { config, agents } = await setup({ maxCostPerRun: 100, maxCostPerAgent: 100, maxTokensPerRun: 1000 });
+  const questions = [];
+  const base = fakeRun(['backend']);
+  const run = async (agent, opts) => {
+    const out = await base(agent, opts);
+    return { ...out, costUsd: null, costSource: 'unknown', usage: { inputTokens: 600, outputTokens: 100, cachedTokens: 50000 } };
+  };
+  const out = await runTask('Tokens', { config, agents, pricing: {}, bus: createBus(), confirm: async (m) => { questions.push(m); return false; }, run });
+  assert.equal(out.status, 'stopped-budget');
+  assert.match(questions[0], /run used 1,400 tokens, over maxTokensPerRun 1,000/);
+  const summary = JSON.parse(readFileSync(join(out.runDir, 'summary.json'), 'utf8'));
+  assert.equal(summary.totalTokens, 1400);
+  assert.deepEqual(summary.tokensPerAgent, { planner: 700, 'coder-backend': 700 });
+});

@@ -33,11 +33,15 @@ export const EVENTS = {
   'diff.ready': z.object({ runId, side: z.string(), round, file: z.string(), filesChanged: z.number() }),
   'review.requested': z.object({ runId, agent, round, sides: z.array(z.string()) }),
   'review.finished': z.object({ runId, agent, round, verdict: z.enum(['approve', 'request-changes']), comments }),
-  'cost.updated': z.object({ runId, totalUsd: z.number(), perAgent: z.record(z.string(), z.number()) }),
+  'cost.updated': z.object({
+    runId, totalUsd: z.number(), perAgent: z.record(z.string(), z.number()),
+    totalTokens: z.number(), perAgentTokens: z.record(z.string(), z.number()),
+  }),
   'run.finished': z.object({
     runId,
     status: z.enum(['approved', 'changes-requested', 'tests-failed', 'unreviewed', 'aborted', 'failed', 'stopped-budget']),
     totalUsd: z.number(),
+    totalTokens: z.number(),
     rounds: z.number(),
     finalComments: comments.nullable(),
     coderNotes: z.record(z.string(), z.string()),

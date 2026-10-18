@@ -33,7 +33,7 @@ SOURCERER_FRONTEND=/path/to/frontend-repo
 SOURCERER_BACKEND=/path/to/backend-repo
 ```
 
-Or let the wizard fill in what is missing (repo paths, LLM per role, key names, pricing rows):
+Or let the wizard fill in what is missing (repo paths, LLM and model per role, budget, token and round limits, key names, pricing rows):
 
 ```sh
 sourcerer setup           # interactive, safe to re-run, never asks for API keys
@@ -81,6 +81,7 @@ Any YAML value can come from the environment with `${VAR}` or `${VAR:-default}`.
 | `SOURCERER_{PLANNER,CODER,REVIEWER}_MODEL` | model per role | the profile's model |
 | `SOURCERER_MAX_COST_PER_RUN`, `SOURCERER_MAX_COST_PER_AGENT` | budget in USD | 5, 2 |
 | `SOURCERER_MAX_ROUNDS` | coder passes per task | 3 |
+| `SOURCERER_MAX_TOKENS_PER_RUN`, `SOURCERER_MAX_TOKENS_PER_AGENT` | token limits (input + output, not cache reads) | none |
 
 See `.env.example` for the full list. Per repo you can also set a `setup` command (run once in each new worktree) and a `test` command (run after every coder pass).
 

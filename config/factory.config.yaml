@@ -20,9 +20,12 @@ paths:
   pricing: ./config/pricing.yaml
   worktrees: ./worktrees
 
+# Token limits count input + output tokens (not cache reads); empty = no token limit.
 budget:
   maxCostPerRun: ${SOURCERER_MAX_COST_PER_RUN:-5}
   maxCostPerAgent: ${SOURCERER_MAX_COST_PER_AGENT:-2}
+  maxTokensPerRun: ${SOURCERER_MAX_TOKENS_PER_RUN:-}
+  maxTokensPerAgent: ${SOURCERER_MAX_TOKENS_PER_AGENT:-}
 
 # maxRounds: coder passes per task (1 = no fix rounds). testOutputChars: test output tail sent back to a coder.
 review:

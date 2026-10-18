@@ -118,3 +118,36 @@ test('doctor reports a missing repo and a missing workspace as FAIL', async () =
     delete process.env.XDG_CONFIG_HOME;
   }
 });
+
+test('setup asks for budget and round limits: Enter keeps, invalid values are asked again', async () => {
+  const root = await freshClone();
+  const [fe, be] = [await repo(), await repo()];
+  const lines = [];
+  const { ask, asked } = scripted([
+    fe, be, '', '', '', '', '', '',   // repos + three roles (profile, model)
+    'lots', '1.5',                    // run budget: invalid, then valid
+    '',                               // agent budget: keep the default
+    '0', '2.5', '2',                  // rounds: 0 and 2.5 are invalid, then 2
+    '150000',                         // tokens per run
+    '',                               // tokens per agent: keep (no limit)
+  ]);
+  await setupCommand({ root }, (l) => lines.push(l), ask);
+  const env = readFileSync(join(root, '.env'), 'utf8');
+  assert.ok(asked.includes('max cost per run (USD) [5]: '));
+  assert.ok(asked.includes('max cost per agent (USD) [2]: '));
+  assert.ok(asked.includes('max rounds (coder passes per task) [3]: '));
+  assert.match(env, /^SOURCERER_MAX_COST_PER_RUN=1\.5$/m);
+  assert.match(env, /^SOURCERER_MAX_COST_PER_AGENT=$/m, 'Enter kept the default (still empty)');
+  assert.match(env, /^SOURCERER_MAX_ROUNDS=2$/m);
+  assert.ok(asked.includes('max tokens per run (input + output, empty = no limit) [no limit]: '));
+  assert.match(env, /^SOURCERER_MAX_TOKENS_PER_RUN=150000$/m);
+  assert.match(env, /^SOURCERER_MAX_TOKENS_PER_AGENT=$/m);
+  const out = lines.join('\n');
+  assert.match(out, /"lots" is not a positive number/);
+  assert.match(out, /"0" is not a whole number of at least 1/);
+  assert.match(out, /"2\.5" is not a whole number of at least 1/);
+
+  const again = scripted([]);
+  await setupCommand({ root }, () => {}, again.ask);
+  assert.ok(again.asked.includes('max cost per run (USD) [1.5]: '), 'shows the .env value next time');
+});

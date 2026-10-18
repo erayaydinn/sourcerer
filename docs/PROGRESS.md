@@ -451,3 +451,24 @@ Fixes:
 - Verified: the real failure replayed through the new path gives a one-line error, and tmux at 100 columns shows wrapped lines.
 
 Suggestion, not done: give coders a fallback on another account/provider (e.g. `fallbackLlm: cursor-main`) so a Claude limit doesn't stop the run.
+
+## setup: budget and round limits (done)
+
+- `sourcerer setup` now also asks for SOURCERER_MAX_COST_PER_RUN, SOURCERER_MAX_COST_PER_AGENT and SOURCERER_MAX_ROUNDS.
+- The value in brackets is the .env value, or the config default from `${VAR:-default}`.
+- Enter keeps it and writes nothing.
+- Invalid input is asked again, up to 3 times: budgets must be positive numbers, rounds a whole number of at least 1.
+- Tests: 123 total.
+
+## Token limits (done)
+
+- `budget.maxTokensPerRun` and `budget.maxTokensPerAgent` (env SOURCERER_MAX_TOKENS_PER_RUN / _PER_AGENT). Optional: empty means no token limit.
+- Tokens counted are input + output; cache reads are not.
+- Checked after every call, like the cost limit, with the same pause/continue question ("run used 1,400 tokens, over maxTokensPerRun 1,000").
+- Calls with unknown cost but reported tokens (e.g. Cursor) are counted, and so are failed calls that report usage.
+- Totals: cost.updated and run.finished carry totalTokens. summary.json has totalTokens and tokensPerAgent. They show in the `run` output and the TUI header.
+- `sourcerer setup` asks for both (whole numbers; shows "[no limit]"; typing `none` removes a set limit).
+- The existing ~/.config/sourcerer config got the two budget lines, since `init` never overwrites files.
+- Tests: 126 total.
+
+Limit: like cost, the token check runs after a call ends, so one long call can go over it.

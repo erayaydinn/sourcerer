@@ -85,11 +85,11 @@ test('--llm wins over the role env vars and drops the env model', async () => {
 });
 
 test('budget and round limits come from env as numbers, with YAML defaults', () => {
-  assert.deepEqual([loadConfig(root).budget, loadConfig(root).review.maxRounds], [{ maxCostPerRun: 5, maxCostPerAgent: 2 }, 3]);
+  assert.deepEqual([loadConfig(root).budget, loadConfig(root).review.maxRounds], [{ maxCostPerRun: 5, maxCostPerAgent: 2, maxTokensPerRun: undefined, maxTokensPerAgent: undefined }, 3]);
   Object.assign(process.env, { SOURCERER_MAX_COST_PER_RUN: '1.5', SOURCERER_MAX_COST_PER_AGENT: '0.5', SOURCERER_MAX_ROUNDS: '1' });
   try {
     const config = loadConfig(root);
-    assert.deepEqual(config.budget, { maxCostPerRun: 1.5, maxCostPerAgent: 0.5 });
+    assert.deepEqual(config.budget, { maxCostPerRun: 1.5, maxCostPerAgent: 0.5, maxTokensPerRun: undefined, maxTokensPerAgent: undefined });
     assert.equal(config.review.maxRounds, 1);
     process.env.SOURCERER_MAX_ROUNDS = 'three';
     assert.throws(() => loadConfig(root), /maxRounds/);
@@ -117,5 +117,17 @@ test('.env edits are picked up on the next load; shell variables still win', () 
     writeFileSync(envPath, before);
     delete process.env.SOURCERER_MAX_COST_PER_RUN;
     loadConfig(root);
+  }
+});
+
+test('token limits come from env; empty means no limit; non-integers are rejected', () => {
+  process.env.SOURCERER_MAX_TOKENS_PER_RUN = '200000';
+  try {
+    assert.equal(loadConfig(root).budget.maxTokensPerRun, 200000);
+    assert.equal(loadConfig(root).budget.maxTokensPerAgent, undefined);
+    process.env.SOURCERER_MAX_TOKENS_PER_RUN = '1.5';
+    assert.throws(() => loadConfig(root), /maxTokensPerRun/);
+  } finally {
+    delete process.env.SOURCERER_MAX_TOKENS_PER_RUN;
   }
 });

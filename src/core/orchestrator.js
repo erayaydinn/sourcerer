@@ -49,7 +49,9 @@ export async function runTask(task, { config, agents, pricing, bus, confirm, pau
   const rounds = ctx.round;
   const finalComments = ctx.lastComments;
   const coderNotes = ctx.notes;
-  emit(bus, 'run.finished', { runId, status, totalUsd: ctx.budget.totalUsd, rounds, finalComments, coderNotes, worktrees, error: errorText });
+  emit(bus, 'run.finished', {
+    runId, status, totalUsd: ctx.budget.totalUsd, totalTokens: ctx.budget.totalTokens, rounds, finalComments, coderNotes, worktrees, error: errorText,
+  });
   return { runId, runDir, status, rounds, finalComments, coderNotes, worktrees, error: errorText };
 }
 
@@ -169,12 +171,12 @@ async function callAgent(ctx, agent, prompt, workspace, round = 1) {
         ...base, status: 'failed', error: error instanceof Error ? error.message : String(error),
         usage: cost?.usage ?? null, costUsd: cost?.costUsd ?? null, costSource: cost?.costSource ?? 'unknown', durationMs: Date.now() - started,
       });
-      if (typeof cost?.costUsd === 'number') await chargeBudget(ctx, agent.name, cost.costUsd);
+      if (typeof cost?.costUsd === 'number' || cost?.usage) await chargeBudget(ctx, agent.name, cost.costUsd, cost.usage);
       if (error?.rateLimited && sameAccount) break;
       continue;
     }
     emit(ctx.bus, 'agent.finished', { ...base, status: 'ok', ...result });
-    await chargeBudget(ctx, agent.name, result.costUsd);
+    await chargeBudget(ctx, agent.name, result.costUsd, result.usage);
     return result.output;
   }
   throw lastError;
@@ -196,9 +198,12 @@ function ragSources(agent, ctx) {
 }
 
 // Questions are queued so parallel coders never ask at the same time.
-function chargeBudget(ctx, agentName, costUsd) {
-  addCost(ctx.budget, agentName, costUsd);
-  emit(ctx.bus, 'cost.updated', { runId: ctx.runId, totalUsd: ctx.budget.totalUsd, perAgent: { ...ctx.budget.perAgent } });
+function chargeBudget(ctx, agentName, costUsd, usage) {
+  addCost(ctx.budget, agentName, costUsd, usage);
+  emit(ctx.bus, 'cost.updated', {
+    runId: ctx.runId, totalUsd: ctx.budget.totalUsd, perAgent: { ...ctx.budget.perAgent },
+    totalTokens: ctx.budget.totalTokens, perAgentTokens: { ...ctx.budget.perAgentTokens },
+  });
   ctx.gate = ctx.gate.then(async () => {
     const message = ctx.stoppedBy ?? overBudget(ctx.budget, agentName);
     if (!message) return;

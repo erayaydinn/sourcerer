@@ -46,14 +46,24 @@ const repo = z.object({
 }).strict();
 
 // Env values arrive as text: "5" -> 5 for fields that may come from ${VAR}. Non-numbers still fail.
+// An empty value (`${VAR:-}` with VAR unset) means "not set".
 function envNumber(schema) {
-  return z.preprocess((value) => (typeof value === 'string' && value.trim() !== '' ? Number(value) : value), schema);
+  return z.preprocess((value) => {
+    if (typeof value !== 'string') return value;
+    return value.trim() === '' ? undefined : Number(value);
+  }, schema);
 }
 
 export const factoryConfig = z.object({
   repos: z.object({ frontend: repo, backend: repo }).strict(),
   paths: z.object({ agents: z.string(), runs: z.string(), pricing: z.string(), worktrees: z.string() }).strict(),
-  budget: z.object({ maxCostPerRun: envNumber(z.number().positive()), maxCostPerAgent: envNumber(z.number().positive()) }).strict(),
+  budget: z.object({
+    maxCostPerRun: envNumber(z.number().positive()),
+    maxCostPerAgent: envNumber(z.number().positive()),
+    // Input + output tokens (cache reads not counted). Empty means no token limit.
+    maxTokensPerRun: envNumber(z.number().int().positive().optional()),
+    maxTokensPerAgent: envNumber(z.number().int().positive().optional()),
+  }).strict(),
   review: z.object({
     maxRounds: envNumber(z.number().int().min(1)),
     testOutputChars: z.number().int().positive(),

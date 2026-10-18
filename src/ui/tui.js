@@ -48,7 +48,7 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
   const [lines, setLines] = useState(['sourcerer: type a task, or /help']);
   const [agents, setAgents] = useState({});
   const [agentLogs, setAgentLogs] = useState({});
-  const [runInfo, setRunInfo] = useState({ round: 0, totalUsd: 0, unknown: 0 });
+  const [runInfo, setRunInfo] = useState({ round: 0, totalUsd: 0, totalTokens: 0, unknown: 0 });
   const [snap, setSnap] = useState({ task: null, question: null, overrides: [] });
   const [input, setInputState] = useState('');
   const inputRef = useRef('');
@@ -69,7 +69,7 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
       task: ({ agents: names, bus }) => {
         setAgents(Object.fromEntries(names.map((name) => [name, { status: 'waiting', costUsd: 0 }])));
         setAgentLogs({});
-        setRunInfo({ round: 0, totalUsd: 0, unknown: 0 });
+        setRunInfo({ round: 0, totalUsd: 0, totalTokens: 0, unknown: 0 });
         const update = (name, fields) => setAgents((all) => ({ ...all, [name]: { ...all[name], ...fields(all[name] ?? {}) } }));
         bus.on('agent.started', (e) => {
           update(e.agent, () => ({ status: 'running', round: e.round, llm: e.llm }));
@@ -80,7 +80,7 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
           if (e.costSource === 'unknown') setRunInfo((info) => ({ ...info, unknown: info.unknown + 1 }));
         });
         bus.on('agent.log', (e) => setAgentLogs((all) => ({ ...all, [e.agent]: append(all[e.agent] ?? [], e.line) })));
-        bus.on('cost.updated', (e) => setRunInfo((info) => ({ ...info, totalUsd: e.totalUsd })));
+        bus.on('cost.updated', (e) => setRunInfo((info) => ({ ...info, totalUsd: e.totalUsd, totalTokens: e.totalTokens })));
       },
     },
   }), []); // one session per App
@@ -157,7 +157,7 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
   const overrides = snap.overrides.length ? ` · llm: ${snap.overrides.join(', ')}` : '';
 
   return h(Box, { flexDirection: 'column' },
-    h(Text, { bold: true }, ` sourcerer · ${status} · $${runInfo.totalUsd.toFixed(4)}${unknown}${overrides}`),
+    h(Text, { bold: true }, ` sourcerer · ${status} · $${runInfo.totalUsd.toFixed(4)}${unknown} · ${runInfo.totalTokens.toLocaleString('en-US')} tok${overrides}`),
     h(Box, { height: bodyHeight },
       h(Box, { flexDirection: 'column', borderStyle: 'single', width: AGENT_PANEL, paddingX: 1 },
         h(Text, { dimColor: true }, 'agents'),

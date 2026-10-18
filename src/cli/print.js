@@ -9,7 +9,7 @@ export function printEvents(bus, print) {
   bus.on('diff.ready', (e) => print(`  diff ${e.side}: ${e.filesChanged} files -> ${e.file}`));
   bus.on('review.requested', (e) => print(`  review requested (${e.agent}, round ${e.round}, ${e.sides.join(' + ')})`));
   bus.on('review.finished', (e) => print(`  review round ${e.round}: ${e.verdict}`));
-  bus.on('cost.updated', (e) => print(`  total $${e.totalUsd.toFixed(4)}`));
+  bus.on('cost.updated', (e) => print(`  total $${e.totalUsd.toFixed(4)}, ${e.totalTokens.toLocaleString('en-US')} tokens`));
 }
 
 // Final status, review comments, coder notes, worktrees and the total from summary.json.
@@ -25,7 +25,8 @@ export function printResult(result, print) {
   if (existsSync(summaryFile)) {
     const summary = JSON.parse(readFileSync(summaryFile, 'utf8'));
     const unknown = summary.unknownCostCalls ? ` (${summary.unknownCostCalls} call(s) with unknown cost)` : '';
-    print(`\ntotal cost: $${summary.totalUsd.toFixed(4)}${unknown}`);
+    const tokens = summary.totalTokens ? `, ${summary.totalTokens.toLocaleString('en-US')} tokens (input + output)` : '';
+    print(`\ntotal cost: $${summary.totalUsd.toFixed(4)}${unknown}${tokens}`);
   }
   print(`run: ${result.runDir}`);
   for (const [side, dir] of Object.entries(result.worktrees)) print(`${side} worktree: ${dir}`);
