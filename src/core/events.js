@@ -40,6 +40,7 @@ export const EVENTS = {
     totalUsd: z.number(),
     rounds: z.number(),
     finalComments: comments.nullable(),
+    coderNotes: z.record(z.string(), z.string()),
     worktrees: z.record(z.string(), z.string()),
     error: z.string().optional(),
   }),

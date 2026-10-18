@@ -51,7 +51,10 @@ export async function runCommand(task, { root, tmux, interactive, llm, side }, p
   for (const [where, comments] of Object.entries(result.finalComments ?? {})) {
     for (const comment of comments) print(`- [${where}] ${comment}`);
   }
-  print(`run: ${result.runDir}`);
+  for (const [side, notes] of Object.entries(result.coderNotes ?? {})) {
+    print(`\n--- ${side} coder notes (end of last answer) ---\n${notes.trim()}`);
+  }
+  print(`\nrun: ${result.runDir}`);
   for (const [side, dir] of Object.entries(result.worktrees)) print(`${side} worktree: ${dir}`);
   if (inPanes) {
     const session = process.env.SOURCERER_SESSION;

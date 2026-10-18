@@ -325,3 +325,18 @@ Not done: `npm publish` (needs your npm login and explicit go).
 - Same-major update: every dependency was already the newest of its major, so nothing changed.
   - Newer majors available, not taken: commander 15, execa 10, openai 7, eslint 10 / @eslint/js 10.
 - Dev link: `npm link` still works with the pnpm-installed node_modules (it only symlinks the bin; verified with a temp global prefix). `pnpm link --global` failed in the sandbox over the global store location, so the README uses npm link.
+
+## Reviewer context (done), after the login-alt-yapisi-kur review
+
+Why: the reviewer approved, but it missed two deploy blockers. (1) The coder edited .gitignore and exclude-list.txt, which are gitignored themselves, so the changes were invisible in the diff and won't be committed. (2) The new deploy exclusions leave no way to create the tables on the server. The reviewer did read both files, but its mandate was "diffs vs the contract". It got no git state and no coder notes (the coder had flagged the problem), and being read-only it couldn't run git or tests.
+
+Changes:
+1. Git state: `ignoredFiles(dir, maxChars)` in src/git/worktree.js. The reviewer prompt lists ignored files (folders collapsed, max 50) with the text of small text files, marked "not in the diff, NOT committed by git".
+2. Coder notes: the end of each coder's last answer (`review.contextChars`, default 4000) goes into the reviewer prompt, `run.finished`/summary.json `coderNotes`, and the `sourcerer run` final output.
+3. Reviewer mandate (prompts.js + reviewer.yaml, including the ~/.config/sourcerer copy):
+   - Review in order: contract → correctness/tests → security (incl. abuse/rate limits) → deployment/operations.
+   - Never ask to remove a safeguard to follow the contract; flag the conflict instead.
+   - Verify the coder notes.
+4. Test context: the reviewer sees the exact test command and that it ran only on this machine, or "no test command configured; the coder's own test claims are unverified".
+- Each round's reviewer prompt is saved to runs/<id>/reviewer.r<N>.prompt.txt, so "what did the reviewer see" can be answered later.
+- Tests: 99 total. Verified on the real worktree: .gitignore and exclude-list.txt now show in the reviewer prompt with their contents.

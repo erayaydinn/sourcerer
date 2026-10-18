@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { Buffer } from 'node:buffer';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execa } from 'execa';
@@ -225,7 +226,7 @@ test('failing tests skip the reviewer and go back to the coder with output', asy
   assert.equal(out.status, 'approved');
   assert.deepEqual(calls, ['planner', 'coder-backend:1', 'coder-backend:2', 'reviewer:1']);
   assert.match(prompts['coder-backend'][1], /test command failed[\s\S]*expected fixed/);
-  assert.match(prompts.reviewer[0], /backend passed/);
+  assert.match(prompts.reviewer[0], /Tests: `node -e .*` passed \(run by the orchestrator in the worktree, on this machine only/);
   assert.ok(existsSync(join(out.runDir, 'backend.r1.test.txt')));
 });
 
@@ -349,4 +350,44 @@ test('invalid --side fails before the planner is called', async () => {
   assert.equal(out.status, 'failed');
   assert.match(out.error, /--side expects frontend and\/or backend, got "mobile"/);
   assert.deepEqual(calls, []);
+});
+
+test('reviewer sees ignored files with contents, coder notes and test context', async () => {
+  const { config, agents } = await setup();
+  const base = fakeRun(['backend']);
+  const { run, prompts } = recorder(['backend'], {
+    'coder-backend': async (agent, opts) => {
+      writeFileSync(join(opts.cwd, '.gitignore'), '.gitignore\nsecret.txt\nbuild/\n');
+      writeFileSync(join(opts.cwd, 'secret.txt'), 'deploy-list');
+      mkdirSync(join(opts.cwd, 'build'));
+      writeFileSync(join(opts.cwd, 'build', 'out.bin'), Buffer.from([0, 1, 2]));
+      await base({ ...agent, name: 'x' }, opts);
+      return result('long preamble\nWARNING: add secret.txt to the server deploy list');
+    },
+  });
+  const out = await runTask('Context', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
+  const prompt = prompts.reviewer[0];
+  assert.match(prompt, /Ignored files in the worktree \(not in the diff above, and NOT committed by git\):/);
+  assert.match(prompt, /- \.gitignore:\n```\n\.gitignore\nsecret\.txt/);
+  assert.match(prompt, /- secret\.txt:\n```\ndeploy-list\n```/);
+  assert.match(prompt, /- build\/\n/);
+  assert.match(prompt, /Coder notes \(end of the coder's last answer\):\nlong preamble\nWARNING: add secret\.txt/);
+  assert.match(prompt, /Tests: no test command configured; the coder's own test claims are unverified/);
+  assert.match(prompt, /do not ask for the safeguard to be removed; point out the conflict instead/);
+  assert.match(prompt, /4\. Deployment and operations/);
+  assert.equal(readFileSync(join(out.runDir, 'reviewer.r1.prompt.txt'), 'utf8'), prompt);
+  const summary = JSON.parse(readFileSync(join(out.runDir, 'summary.json'), 'utf8'));
+  assert.match(summary.coderNotes.backend, /WARNING: add secret\.txt/);
+  assert.deepEqual(out.coderNotes, summary.coderNotes);
+});
+
+test('coder notes are trimmed to review.contextChars, keeping the end', async () => {
+  const { config, agents } = await setup();
+  config.review.contextChars = 10;
+  const base = fakeRun(['backend']);
+  const run = (agent, opts) => (agent.name === 'coder-backend'
+    ? base({ ...agent, name: 'x' }, opts).then(() => result('0123456789-THE-END'))
+    : base(agent, opts));
+  const out = await runTask('Trim', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
+  assert.equal(out.coderNotes.backend, '89-THE-END');
 });

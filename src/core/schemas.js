@@ -57,6 +57,8 @@ export const factoryConfig = z.object({
   review: z.object({
     maxRounds: envNumber(z.number().int().min(1)),
     testOutputChars: z.number().int().positive(),
+    // Coder notes and ignored-file contents given to the reviewer (default keeps older workspaces valid).
+    contextChars: z.number().int().positive().default(4000),
   }).strict(),
   tools: z.object({
     maxOutputChars: z.number().int().positive(),

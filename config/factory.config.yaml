@@ -28,6 +28,7 @@ budget:
 review:
   maxRounds: ${SOURCERER_MAX_ROUNDS:-3}
   testOutputChars: 2000
+  contextChars: 4000      # coder notes and ignored-file contents shown to the reviewer
 
 # Limits for the built-in tools used by API agents (openai-compat, anthropic).
 tools:

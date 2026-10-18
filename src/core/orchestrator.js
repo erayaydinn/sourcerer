@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import { runAgent } from '../adapters/index.js';
-import { createWorktrees, diffWorktree, taskDir, taskSlug, workspaceFor } from '../git/worktree.js';
+import { createWorktrees, diffWorktree, ignoredFiles, taskDir, taskSlug, workspaceFor } from '../git/worktree.js';
 import { addCost, createBudget, overBudget } from './cost.js';
 import { emit } from './events.js';
 import { coderPrompt, parseJsonBlock, planSchema, plannerPrompt, reviewSchema, reviewerPrompt } from './prompts.js';
@@ -19,7 +19,7 @@ export async function runTask(task, { config, agents, pricing, bus, confirm, pau
   mkdirSync(runDir, { recursive: true });
   attachRunLogger(bus, runDir);
 
-  const ctx = { runId, runDir, worktrees: {}, config, pricing, bus, run, confirm, pause, budget: createBudget(config.budget), gate: Promise.resolve(), stoppedBy: null, round: 0, lastComments: null };
+  const ctx = { runId, runDir, worktrees: {}, config, pricing, bus, run, confirm, pause, budget: createBudget(config.budget), gate: Promise.resolve(), stoppedBy: null, round: 0, lastComments: null, notes: {} };
   let worktrees = {};
   let status = 'failed';
   let errorText;
@@ -46,14 +46,15 @@ export async function runTask(task, { config, agents, pricing, bus, confirm, pau
 
   const rounds = ctx.round;
   const finalComments = ctx.lastComments;
-  emit(bus, 'run.finished', { runId, status, totalUsd: ctx.budget.totalUsd, rounds, finalComments, worktrees, error: errorText });
-  return { runId, runDir, status, rounds, finalComments, worktrees, error: errorText };
+  const coderNotes = ctx.notes;
+  emit(bus, 'run.finished', { runId, status, totalUsd: ctx.budget.totalUsd, rounds, finalComments, coderNotes, worktrees, error: errorText });
+  return { runId, runDir, status, rounds, finalComments, coderNotes, worktrees, error: errorText };
 }
 
 // Each round: run coders that have work -> their tests -> (if green) diffs + reviewer.
 // Failing tests skip the reviewer and go straight back to that coder. Returns the final status.
 async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
-  const { repos, review: { maxRounds, testOutputChars } } = ctx.config;
+  const { repos, review: { maxRounds, testOutputChars, contextChars = 4000 } } = ctx.config;
   const reviewer = byRole(agents, 'reviewer');
   const tests = {};
   let feedback = Object.fromEntries(plan.sides.map((side) => [side, null]));
@@ -63,7 +64,8 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
     await allOrThrow(Object.entries(feedback).map(([side, sideFeedback]) => {
       const coder = coderFor(agents, side);
       const workspace = workspaceFor(coder, worktrees, dir);
-      return callAgent(ctx, coder, coderPrompt(task, plan, side, workspace, sideFeedback), workspace, round);
+      return callAgent(ctx, coder, coderPrompt(task, plan, side, workspace, sideFeedback), workspace, round)
+        .then((output) => { ctx.notes[side] = output.slice(-contextChars); });
     }));
 
     const failing = {};
@@ -71,7 +73,7 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
       const result = await runTests(repos[side].test, worktrees[side]);
       const file = join(runDir, `${side}.r${round}.test.txt`);
       writeFileSync(file, result.output);
-      tests[side] = result.passed;
+      tests[side] = { command: repos[side].test.run.join(' '), passed: result.passed };
       emit(ctx.bus, 'tests.finished', { runId: ctx.runId, side, round, passed: result.passed, file });
       if (!result.passed) failing[side] = { round: round + 1, comments: [], testOutput: result.output.slice(-testOutputChars) };
     }
@@ -82,18 +84,20 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
       continue;
     }
 
-    const diffs = {};
+    const context = {};
     for (const side of plan.sides) {
       const { diff, filesChanged } = await diffWorktree(worktrees[side], repos[side].base);
       const file = join(runDir, `${side}.r${round}.diff`);
       writeFileSync(file, diff);
-      diffs[side] = diff;
+      const ignored = await ignoredFiles(worktrees[side], contextChars);
+      context[side] = { diff, test: tests[side] ?? null, ignored, notes: ctx.notes[side] };
       emit(ctx.bus, 'diff.ready', { runId: ctx.runId, side, round, file, filesChanged });
     }
 
     if (await pausePoint(ctx, `diffs for round ${round} are ready; run the reviewer?`) === 'skip') return 'unreviewed';
     emit(ctx.bus, 'review.requested', { runId: ctx.runId, agent: reviewer.name, round, sides: plan.sides });
-    const prompt = reviewerPrompt(task, plan, diffs, tests, ctx.lastComments);
+    const prompt = reviewerPrompt(task, plan, context, ctx.lastComments);
+    writeFileSync(join(runDir, `reviewer.r${round}.prompt.txt`), prompt);
     const answer = await callAgent(ctx, reviewer, prompt, workspaceFor(reviewer, worktrees, dir), round);
     const review = parseJsonBlock(answer, reviewSchema, 'reviewer');
     writeFileSync(join(runDir, `review.r${round}.json`), JSON.stringify(review, null, 2));

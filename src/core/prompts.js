@@ -57,29 +57,53 @@ function fixSection({ round, comments, testOutput }) {
   return parts.join('\n\n');
 }
 
-// tests: { side: passed } for sides with a test command. previous: last round's comments or null.
-export function reviewerPrompt(task, plan, diffs, tests, previous) {
-  const diffText = Object.entries(diffs)
-    .map(([side, diff]) => `### ${side}\n\`\`\`diff\n${diff || '(no changes)'}\n\`\`\``)
-    .join('\n\n');
-  const testText = Object.keys(tests).length
-    ? `\n\nTest commands: ${Object.entries(tests).map(([side, passed]) => `${side} ${passed ? 'passed' : 'failed'}`).join(', ')}`
-    : '';
+// context per side: { diff, test: { command, passed } | null, ignored: [{ path, content }], notes }.
+// previous: last round's comments or null.
+export function reviewerPrompt(task, plan, context, previous) {
+  const sides = Object.entries(context).map(([side, c]) => sideSection(side, c)).join('\n\n');
   const previousText = previous ? `\n\nYour comments from the previous round (check they were addressed):\n${JSON.stringify(previous, null, 2)}` : '';
   return `Task: ${task}
 
 API contract:
 ${plan.contract}
 
-Diffs:
-${diffText}${testText}${previousText}
+${sides}${previousText}
 
-Check both diffs against the contract and each other.
+Review in this order:
+1. Contract: each side matches the contract, and the sides match each other.
+2. Correctness and tests.
+3. Security: authentication, secrets, input handling, abuse (e.g. missing rate limits), data that could be exposed.
+4. Deployment and operations: config, migrations, deploy/ignore lists, files that will not be committed, anything the server needs.
+If following the contract would remove a safeguard, do not ask for the safeguard to be removed; point out the conflict instead.
+The coder notes are the coders' own claims: verify them, and act on any risks they raise.
 Put each comment under the side that must change it, or "general" if it is not side-specific.
 End your answer with exactly one fenced json block in this shape:
 \`\`\`json
 { "verdict": "approve" | "request-changes", "comments": { "frontend": ["..."], "backend": ["..."], "general": ["..."] } }
 \`\`\``;
+}
+
+function sideSection(side, { diff, test, ignored, notes }) {
+  const testText = test
+    ? `\`${test.command}\` ${test.passed ? 'passed' : 'failed'} (run by the orchestrator in the worktree, on this machine only; not on any server)`
+    : 'no test command configured; the coder\'s own test claims are unverified';
+  const ignoredText = ignored.length
+    ? ignored.map(({ path, content }) => (content === null ? `- ${path}` : `- ${path}:\n\`\`\`\n${content}\n\`\`\``)).join('\n')
+    : '(none)';
+  return `## ${side}
+
+Diff against the base branch:
+\`\`\`diff
+${diff || '(no changes)'}
+\`\`\`
+
+Ignored files in the worktree (not in the diff above, and NOT committed by git):
+${ignoredText}
+
+Tests: ${testText}
+
+Coder notes (end of the coder's last answer):
+${notes || '(none)'}`;
 }
 
 // Reads the last ```json block of an agent's answer and validates it.

@@ -65,6 +65,7 @@ function summarize(event, calls) {
     rounds: event.rounds,
     reviewRounds: calls.filter((call) => call.role === 'reviewer' && call.status === 'ok').length,
     finalComments: event.finalComments,
+    coderNotes: event.coderNotes,
     worktrees: event.worktrees,
   };
 }
