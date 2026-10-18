@@ -2,18 +2,19 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import { join } from 'node:path';
 import { countedTokens } from './cost.js';
 import { EVENTS } from './events.js';
+import { redact } from './security.js';
 
 // Writes runs/<id>/: orchestrator.log, <agent>.log (live), <agent>.json and summary.json.
 export function attachRunLogger(bus, runDir) {
   const calls = [];
   const streamed = new Set();
-  const agentLog = (agent, text) => appendFileSync(join(runDir, `${agent}.log`), `${text}\n`);
+  const agentLog = (agent, text) => appendFileSync(join(runDir, `${agent}.log`), `${redact(text)}\n`);
 
   for (const name of Object.keys(EVENTS).filter((name) => name !== 'agent.log')) {
     bus.on(name, (payload) => {
       const line = { ...payload };
       delete line.output; // full output goes to <agent>.log
-      appendFileSync(join(runDir, 'orchestrator.log'), `${new Date().toISOString()} ${name} ${JSON.stringify(line)}\n`);
+      appendFileSync(join(runDir, 'orchestrator.log'), `${new Date().toISOString()} ${name} ${redact(JSON.stringify(line))}\n`);
     });
   }
 

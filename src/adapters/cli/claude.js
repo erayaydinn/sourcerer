@@ -1,19 +1,27 @@
 // Verified against docs/cli-help/claude.txt (2.1.302) and test/fixtures/claude-stream.jsonl.
 // stream-json with --print requires --verbose (checked with a real call).
 // Edit/Write scoped to ./** was verified to block writes in --add-dir folders.
-const TOOL_NAMES = {
-  read_file: ['Read'],
-  write_file: ['Edit(./**)', 'Write(./**)'],
-  run_command: ['Bash'],
-  search_code: ['Grep', 'Glob'],
-  find_symbol: ['Grep'],
-  search_docs: ['Grep'],
-  web_search: ['WebSearch'],
-  web_fetch: ['WebFetch'],
-};
+const absolute = (dir) => `//${dir.replace(/^\/+/, '')}/**`;
 
-export function command({ prompt, model, allowedTools, readDirs = [] }) {
-  const tools = [...new Set(allowedTools.flatMap((name) => TOOL_NAMES[name] ?? []))];
+// Our tool names -> Claude Code permission rules. With security, reads and searches are limited to
+// the worktree (./**) and the read-only dirs, and Bash to the allowed command prefixes; both
+// verified with real calls (other paths and chained commands like `git status && cat x` are denied).
+function rules(name, { readDirs, security }) {
+  const confine = security?.confineFiles;
+  const scoped = (tool) => (confine ? [`${tool}(./**)`, ...readDirs.map((dir) => `${tool}(${absolute(dir)})`)] : [tool]);
+  switch (name) {
+    case 'read_file': return scoped('Read');
+    case 'write_file': return ['Edit(./**)', 'Write(./**)'];
+    case 'search_code': case 'find_symbol': case 'search_docs': return [...scoped('Grep'), ...scoped('Glob')];
+    case 'run_command': return security?.commandAllowlist ? security.allowCommands.flatMap((cmd) => [`Bash(${cmd})`, `Bash(${cmd} *)`]) : ['Bash'];
+    case 'web_search': return ['WebSearch'];
+    case 'web_fetch': return ['WebFetch'];
+    default: return [];
+  }
+}
+
+export function command({ prompt, model, allowedTools, readDirs = [], security }) {
+  const tools = [...new Set(allowedTools.flatMap((name) => rules(name, { readDirs, security })))];
   // dontAsk denies every tool that is not in --allowedTools.
   const args = ['-p', '--verbose', '--output-format', 'stream-json', '--no-session-persistence', '--permission-mode', 'dontAsk', '--model', model];
   if (readDirs.length) args.push('--add-dir', ...readDirs);

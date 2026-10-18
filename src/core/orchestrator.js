@@ -7,6 +7,8 @@ import { addCost, createBudget, overBudget } from './cost.js';
 import { emit } from './events.js';
 import { coderPrompt, parseJsonBlock, planSchema, plannerPrompt, reviewSchema, reviewerPrompt } from './prompts.js';
 import { attachRunLogger } from './run-logger.js';
+import { gitDirOf, sandboxed } from './sandbox.js';
+import { redact } from './security.js';
 
 // task -> planner -> contract -> worktrees -> review loop (coders in parallel -> tests -> diffs -> reviewer).
 // `confirm(message)` resolves true to continue over budget. `run` is replaceable for tests.
@@ -34,7 +36,7 @@ export async function runTask(task, { config, agents, pricing, bus, confirm, pau
     const planWorkspace = { cwd: runDir, readDirs: [repos.frontend.path, repos.backend.path] };
     const answer = await callAgent(ctx, planner, plannerPrompt(task, repos, sides), planWorkspace, 0);
     const plan = withSides(parseJsonBlock(answer, planSchema, 'planner'), sides);
-    writeFileSync(join(runDir, 'contract.txt'), plan.contract);
+    writeFileSync(join(runDir, 'contract.txt'), redact(plan.contract));
 
     plan.sides.forEach((side) => coderFor(agents, side));
     signal?.throwIfAborted();
@@ -73,12 +75,12 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
       const context = round === 1 && ctx.contextFor ? await ctx.contextFor({ side, task, plan, worktree: worktrees[side] }) : '';
       if (context) writeFileSync(join(runDir, `${side}.context.txt`), context);
       return callAgent(ctx, coder, coderPrompt(task, plan, side, workspace, sideFeedback, context), workspace, round)
-        .then((output) => { ctx.notes[side] = output.slice(-contextChars); });
+        .then((output) => { ctx.notes[side] = redact(output).slice(-contextChars); });
     }));
 
     const failing = {};
     for (const side of Object.keys(feedback).filter((side) => repos[side].test)) {
-      const result = await runTests(repos[side].test, worktrees[side], ctx.signal);
+      const result = await runTests(repos[side].test, worktrees[side], ctx.signal, ctx.config.security);
       const file = join(runDir, `${side}.r${round}.test.txt`);
       writeFileSync(file, result.output);
       tests[side] = { command: repos[side].test.run.join(' '), passed: result.passed };
@@ -97,7 +99,7 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
       const { diff, filesChanged } = await diffWorktree(worktrees[side], repos[side].base);
       const file = join(runDir, `${side}.r${round}.diff`);
       writeFileSync(file, diff);
-      const ignored = await ignoredFiles(worktrees[side], contextChars);
+      const ignored = await ignoredFiles(worktrees[side], contextChars, ctx.config.security?.secretFiles ?? []);
       context[side] = { diff, test: tests[side] ?? null, ignored, notes: ctx.notes[side] };
       emit(ctx.bus, 'diff.ready', { runId: ctx.runId, side, round, file, filesChanged });
     }
@@ -134,8 +136,9 @@ function feedbackFor(sides, comments, round) {
   return Object.fromEntries(targets.map((side) => [side, { round, comments: [...comments[side], ...comments.general] }]));
 }
 
-async function runTests(test, cwd, signal) {
-  const [bin, ...args] = test.run;
+// Tests run code the coder wrote, so they run in the sandbox too (when it is on).
+async function runTests(test, cwd, signal, security) {
+  const [bin, args] = sandboxed(test.run[0], test.run.slice(1), { security, write: [cwd, gitDirOf(cwd)].filter(Boolean) });
   const result = await execa(bin, args, { cwd, reject: false, all: true, timeout: test.timeoutSec * 1000, cancelSignal: signal });
   signal?.throwIfAborted();
   const output = result.timedOut ? `timed out after ${test.timeoutSec}s\n${result.all ?? ''}` : (result.all ?? '');
@@ -155,8 +158,9 @@ async function callAgent(ctx, agent, prompt, workspace, round = 1) {
     let result;
     const onLog = (line) => emit(ctx.bus, 'agent.log', { runId: ctx.runId, agent: agent.name, line });
     try {
+      // Secret-looking values never leave in prompts Sourcerer writes (agents' own file reads are not covered).
       result = await ctx.run({ ...agent, profile: attempt.profile, model: attempt.model },
-        { prompt, ...workspace, sources: ragSources(agent, ctx), config: ctx.config, pricing: ctx.pricing, onLog, signal: ctx.signal });
+        { prompt: redact(prompt), ...workspace, sources: ragSources(agent, ctx), config: ctx.config, pricing: ctx.pricing, onLog, signal: ctx.signal });
     } catch (error) {
       lastError = error;
       if (ctx.signal?.aborted) {

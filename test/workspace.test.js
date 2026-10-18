@@ -78,7 +78,7 @@ test('a workspace agents/<name>.yaml replaces that package agent; unknown sectio
 });
 
 test('models add / list / remove edit only sourcerer.yaml, keep comments, and refuse unsafe changes', async () => {
-  const root = workspace('# my notes stay\nbudget: { maxCostPerRun: 4 } # inline note\n');
+  const root = workspace('# my notes stay\nbudget: { maxCostPerRun: 4 } # inline note\nsecurity: { trustUnconfinedCli: true }\n');
   const print = out();
   await modelsAddCommand('cursor-high', { root, cli: 'cursor-agent', provider: 'xai', model: 'grok-4.7-high' }, print, null);
   const text = readFileSync(join(root, 'sourcerer.yaml'), 'utf8');

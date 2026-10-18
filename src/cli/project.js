@@ -1,10 +1,11 @@
 import { loadConfig } from '../core/config.js';
 import { applyLlmOverrides, loadAgents, validate } from '../core/factory.js';
+import { applySecurity } from '../core/security.js';
 
 // Loads config + agents (with --llm overrides) and validates them.
 export function loadProject(root, llmPairs = [], options = {}) {
   const config = loadConfig(root, options);
-  const defs = applyLlmOverrides(loadAgents(root, config), llmPairs);
+  const defs = applySecurity(applyLlmOverrides(loadAgents(root, config), llmPairs), config);
   return { config, defs, ...validate(defs, config) };
 }
 

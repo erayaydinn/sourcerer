@@ -1,5 +1,6 @@
 import { execa } from 'execa';
 import { priceUsage } from '../core/cost.js';
+import { gitDirOf, sandboxed } from '../core/sandbox.js';
 import * as claude from './cli/claude.js';
 import * as cursor from './cli/cursor.js';
 
@@ -7,16 +8,19 @@ import * as cursor from './cli/cursor.js';
 const RECIPES = { claude, 'cursor-agent': cursor };
 export const CLI_BINS = Object.keys(RECIPES);
 
-export async function runCli(profile, { prompt, system, cwd, readDirs, model, allowedTools, timeoutSec, pricing, onLog, signal }) {
+export async function runCli(profile, { prompt, system, cwd, readDirs, model, allowedTools, timeoutSec, pricing, onLog, signal, security }) {
   const recipe = RECIPES[profile.bin];
   if (!recipe) throw new Error(`no CLI recipe for "${profile.bin}"`);
   const fullPrompt = system ? `${system}\n\n${prompt}` : prompt;
-  const { args, input } = recipe.command({ prompt: fullPrompt, model, cwd, readDirs, allowedTools });
+  const { args, input } = recipe.command({ prompt: fullPrompt, model, cwd, readDirs, allowedTools, security });
 
   signal?.throwIfAborted();
   const started = Date.now();
   // Own process group, so stopping it also stops whatever the agent started (tests, servers, ...).
-  const subprocess = execa(profile.bin, args, { cwd, input, timeout: timeoutSec * 1000, detached: true });
+  const [bin, binArgs] = sandboxed(profile.bin, args, {
+    security, write: [cwd, gitDirOf(cwd)].filter(Boolean), read: [...readDirs, ...readDirs.map(gitDirOf)].filter(Boolean),
+  });
+  const subprocess = execa(bin, binArgs, { cwd, input, timeout: timeoutSec * 1000, detached: true });
   const stop = () => killGroup(subprocess.pid);
   signal?.addEventListener('abort', stop, { once: true });
   if (onLog && recipe.logLine) streamLines(subprocess.stdout, (line) => {

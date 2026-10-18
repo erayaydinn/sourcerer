@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { Buffer } from 'node:buffer';
 import { basename, join } from 'node:path';
 import { execa } from 'execa';
+import { isSecretFile } from '../core/security.js';
 import { definitions, tokenize } from './tokenize.js';
 
 // One BM25 index per repo side, built from the base branch's last commit:
@@ -43,7 +44,7 @@ export function pathTerms(path) {
   return tokenize(path.replace(/\.[^./]+$/, '').replace(/[/.-]/g, ' '));
 }
 
-async function listFiles(repoPath, base, { maxFileBytes, exclude }) {
+async function listFiles(repoPath, base, { maxFileBytes, exclude }, secretFiles) {
   const { stdout } = await execa('git', ['-C', repoPath, 'ls-tree', '-r', '-l', '-z', base], { maxBuffer: 1024 * 1024 * 512 });
   const files = [];
   const skipped = { excluded: 0, tooBig: 0 };
@@ -52,7 +53,7 @@ async function listFiles(repoPath, base, { maxFileBytes, exclude }) {
     const [mode, type, hash, size] = entry.slice(0, tab).split(/\s+/);
     const path = entry.slice(tab + 1);
     if (type !== 'blob' || mode === '120000') continue;
-    if (excluded(path, exclude)) skipped.excluded++;
+    if (excluded(path, exclude) || isSecretFile(path, secretFiles)) skipped.excluded++;
     else if (Number(size) > maxFileBytes) skipped.tooBig++;
     else files.push({ path, hash });
   }
@@ -100,7 +101,7 @@ export async function buildIndex(config, root, side, { force = false } = {}) {
     return { side, upToDate: true, files: old.files.length, commit };
   }
 
-  const { files, skipped } = await listFiles(repo.path, repo.base, config.rag);
+  const { files, skipped } = await listFiles(repo.path, repo.base, config.rag, config.security?.secretFiles ?? []);
   const pathOf = new Map(files.map((f) => [f.hash, f.path]));
   const missing = [...pathOf.keys()].filter((hash) => !existsSync(blobFile(root, hash)));
   let binary = 0;

@@ -1,4 +1,4 @@
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -39,6 +39,7 @@ export async function setupCommand({ root: flag, refresh }, print, ask) {
       changes.push(`${WORKSPACE_FILE} created`);
     }
     const env = envFile(join(root, '.env'), changes);
+    privatePermissions(root, changes);
 
     print('\nRepos (saved in .env)');
     for (const side of ['frontend', 'backend']) await askRepo(side, env, question, print);
@@ -89,6 +90,16 @@ export async function setupCommand({ root: flag, refresh }, print, ask) {
   }
 }
 
+// Only you can read the workspace (runs, index and prompts hold code) and .env (keys).
+function privatePermissions(root, changes) {
+  for (const [path, mode] of [[root, 0o700], [join(root, '.env'), 0o600]]) {
+    if (existsSync(path) && (statSync(path).mode & 0o077)) {
+      chmodSync(path, mode);
+      changes.push(`permissions ${mode.toString(8)} on ${path === root ? 'the workspace' : '.env'}`);
+    }
+  }
+}
+
 function workspaceFor(flag) {
   if (flag) return resolve(flag);
   if (process.env.SOURCERER_ROOT) return resolve(process.env.SOURCERER_ROOT);
@@ -103,6 +114,7 @@ function workspaceFor(flag) {
 function envFile(file, changes) {
   if (!existsSync(file)) {
     copyFileSync(join(PACKAGE_DIR, '.env.example'), file);
+    chmodSync(file, 0o600);
     changes.push('.env created from .env.example');
   }
   return {

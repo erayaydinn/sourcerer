@@ -1,8 +1,9 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import { createAgent } from '../core/factory.js';
 import { readMeta } from '../rag/index.js';
+import { sandboxActive, sandboxAvailable } from '../core/sandbox.js';
 import { loadProject } from './project.js';
 import { resolveRoot } from './root.js';
 import { smokeCommand } from './smoke.js';
@@ -96,6 +97,24 @@ export async function runChecks(rootFlag) {
   }
   for (const model of unpriced) checks.push(warn(`no price for ${model}`, 'cost will be "unknown"; add it under pricing: in sourcerer.yaml'));
   if (!unpriced.size) checks.push(ok('pricing covers every model that does not report cost'));
+
+  const { security } = config;
+  checks.push(security.webAccess ? warn('web access is on for agents', 'turn off with security.webAccess: false') : ok('web access off'));
+  checks.push(security.commandAllowlist ? ok('coder commands limited to the allowlist') : warn('coders may run any command', 'set security.commandAllowlist: true'));
+  checks.push(security.confineFiles ? ok('Claude reads limited to the worktree and the other repo') : warn('Claude may read any file', 'set security.confineFiles: true'));
+  let sandboxOn = false;
+  try {
+    sandboxOn = sandboxActive(security);
+  } catch (error) {
+    checks.push(fail('sandbox', error.message));
+  }
+  if (sandboxOn) checks.push(ok('macOS sandbox on: agents, their commands and tests cannot read or write your home folder'));
+  else checks.push(warn(sandboxAvailable() ? 'sandbox is off' : 'no sandbox on this platform', sandboxAvailable()
+    ? 'turn on with security.sandbox.enabled: auto' : 'run Sourcerer in a container or VM without your credentials'));
+  if (security.trustUnconfinedCli && !sandboxOn) checks.push(warn('security.trustUnconfinedCli is on', 'cursor-agent can read any file and run any command'));
+  for (const [label, path] of [['workspace', root], ['.env', join(root, '.env')]]) {
+    if (existsSync(path) && (statSync(path).mode & 0o077)) checks.push(warn(`${label} can be read by other users`, 'run `sourcerer setup` to fix the permissions'));
+  }
 
   if (config.rag.enabled) {
     for (const side of Object.keys(config.repos)) {

@@ -148,11 +148,34 @@ sourcerer index --side backend --query "rate limit login attempts"   # see the r
 - **Where it lives:** the index is in `<workspace>/index/`. The context each coder got is saved in `runs/<id>/<side>.context.txt`.
 - **Limits:** this is lexical search. It finds words, not meaning, and doesn't translate. The coder query is built from the planner's contract and instructions (usually English) plus the task.
 
-## Safety notes
+## Security
 
-- Agents write only inside their own worktree. The other repo is read-only, and the reviewer cannot write at all.
-- Coders that run commands are **not** restricted to an allowlist when using the `claude` or `cursor-agent` CLIs. Treat them like a developer with shell access to the worktree, and try Sourcerer on copies of your repos first.
-- Content fetched from the web is passed to agents as untrusted data.
+Secure by default; loosen per workspace under `security:` in `sourcerer.yaml`.
+
+**What leaves your machine.** Agents send code, task text, diffs and test output to the LLM provider of each profile: Anthropic for `claude`, Cursor and the model's vendor for `cursor-agent`, or your API endpoint. Use accounts your organization has approved for its code.
+
+**What agents may do**
+
+| Setting | Default | Effect |
+|---|---|---|
+| `webAccess` | `false` | removes web search/fetch from every agent |
+| `commandAllowlist` | `true` | coders may only run `allowCommands` + `extraCommands` + each repo's `setup`/`test` command. Chained commands (`git status && cat ~/.ssh/id_rsa`), `curl`, `ssh` and `git push` are denied |
+| `confineFiles` | `true` | Claude can only read and search its worktree and the other repo |
+| `sandbox.enabled` | `auto` | **macOS:** agent CLIs, every command they run, your tests and setup commands run in an OS sandbox (`sandbox-exec`). Nothing under your home folder can be read or written except the task's worktree (and its `.git`), the other repo (read-only), the CLIs' own install and login folders, language toolchains and package caches. Add paths with `sandbox.allowRead` / `allowWrite` |
+| `trustUnconfinedCli` | `false` | without the sandbox (other platforms, or turned off), `cursor-agent` can't be limited: it reads any file, even with its own `--sandbox` flag. So it is refused unless you set this |
+| `secretFiles` | `.env*`, `*.pem`, `*.key`, `id_rsa*`, `*credentials*`, ... | never indexed, never shown to the reviewer (name only) |
+
+The sandbox and the Claude restrictions were checked with real calls. Inside the sandbox, both `claude` and `cursor-agent --force` work normally, but get "Operation not permitted" for files elsewhere in your home folder. API agents (openai-compat, anthropic) use Sourcerer's own tools, which are already limited to the worktree and follow the same allowlist.
+
+**Redaction.** Secret-looking values (cloud and API keys, tokens, private keys, `password=...`) are replaced with `[REDACTED]` in everything Sourcerer sends (contract, context, diffs, test output, feedback) and in run logs. An agent CLI's own file reads are outside this, which is why reads are confined.
+
+**On disk.** The workspace (`~/.config/sourcerer`, mode 700) holds `.env` (mode 600), run logs (prompts, diffs, agent output) and the search index (code snippets). Remove them with `sourcerer clean --runs [--older-than 30d] --index --yes`. Worktrees are never touched; use `sourcerer worktree remove`.
+
+**Limits.**
+
+- **Network stays open:** the CLIs must reach their LLM API, and the macOS sandbox can't filter by domain. An agent could send what it can read (the worktree) elsewhere.
+- **CLI logins stay readable:** the CLIs' own login data (e.g. the Keychain) has to be readable.
+- **Other platforms:** off macOS there is no sandbox yet. There, coder-written code (tests) can do anything your user can, so use a container or VM without your credentials. Review every diff before you commit; Sourcerer never commits or pushes. `sourcerer doctor` shows the current security settings.
 
 ## Development
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
+import { isSecretFile } from '../core/security.js';
 import { PATH_WEIGHT, analyze, excluded, indexDir, pathTerms } from './index.js';
 import { tokenize } from './tokenize.js';
 
@@ -70,7 +71,7 @@ export async function searchIndex(config, root, side, query, { worktree, limit =
 
   for (const path of changed) {
     const file = join(worktree, path);
-    if (!existsSync(file) || excluded(path, config.rag.exclude) || statSync(file).size > config.rag.maxFileBytes) continue;
+    if (!existsSync(file) || excluded(path, config.rag.exclude) || isSecretFile(path, config.security?.secretFiles ?? []) || statSync(file).size > config.rag.maxFileBytes) continue;
     const bytes = readFileSync(file);
     if (bytes.subarray(0, 8000).includes(0)) continue;
     const { terms: tfs, length } = analyze(path, bytes.toString('utf8'));

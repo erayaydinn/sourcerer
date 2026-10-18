@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
+import { gitDirOf, sandboxed } from '../core/sandbox.js';
+import { isSecretFile } from '../core/security.js';
 
 const GIT_TIMEOUT_MS = 60_000;
 const SIDES = ['frontend', 'backend'];
@@ -34,7 +36,8 @@ export async function createWorktrees(config, slug, sides, { signal } = {}) {
       await git(repo.path, ['worktree', 'add', '-b', branch, dir, repo.base]);
       created[side] = dir;
       if (repo.setup) {
-        const [bin, ...args] = repo.setup.run;
+        // Install scripts are code from the repo: run setup in the sandbox (when it is on).
+        const [bin, args] = sandboxed(repo.setup.run[0], repo.setup.run.slice(1), { security: config.security, write: [dir, gitDirOf(dir)].filter(Boolean) });
         await execa(bin, args, { cwd: dir, timeout: repo.setup.timeoutSec * 1000, cancelSignal: signal });
       }
     }
@@ -89,11 +92,13 @@ export async function diffWorktree(dir, base) {
 
 // Ignored files are left out of the diff and will not be committed. Lists them (folders collapsed),
 // with the text of small text files, so a changed .gitignore or deploy list is not invisible.
-export async function ignoredFiles(dir, maxChars) {
+// Files matching `secretPatterns` are listed by name only.
+export async function ignoredFiles(dir, maxChars, secretPatterns = []) {
   const { stdout } = await git(dir, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory']);
   const paths = stdout ? stdout.split('\n') : [];
   return paths.slice(0, 50).map((path) => {
     if (path.endsWith('/')) return { path, content: null };
+    if (isSecretFile(path, secretPatterns)) return { path, content: null, secret: true };
     const bytes = readFileSync(join(dir, path));
     const isText = bytes.length <= maxChars && !bytes.includes(0);
     return { path, content: isText ? bytes.toString('utf8') : null };

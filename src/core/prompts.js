@@ -89,7 +89,7 @@ function sideSection(side, { diff, test, ignored, notes }) {
     ? `\`${test.command}\` ${test.passed ? 'passed' : 'failed'} (run by the orchestrator in the worktree, on this machine only; not on any server)`
     : 'no test command configured; the coder\'s own test claims are unverified';
   const ignoredText = ignored.length
-    ? ignored.map(({ path, content }) => (content === null ? `- ${path}` : `- ${path}:\n\`\`\`\n${content}\n\`\`\``)).join('\n')
+    ? ignored.map(({ path, content, secret }) => (secret ? `- ${path} (content not shown: may contain secrets)` : content === null ? `- ${path}` : `- ${path}:\n\`\`\`\n${content}\n\`\`\``)).join('\n')
     : '(none)';
   return `## ${side}
 

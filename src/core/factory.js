@@ -2,6 +2,8 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PACKAGE_DIR, WORKSPACE_FILE, readYaml } from './config.js';
 import { agentDef } from './schemas.js';
+import { sandboxActive } from './sandbox.js';
+import { UNCONFINED_BINS } from './security.js';
 
 const WRITE_TOOLS = ['write_file', 'run_command'];
 // Role variables override every agent of that role (above sourcerer.yaml, below --llm).
@@ -41,6 +43,12 @@ export function validate(defs, config) {
   const warnings = [];
   const names = new Set();
 
+  let sandboxed = false;
+  try {
+    sandboxed = sandboxActive(config.security);
+  } catch (error) {
+    errors.push(error.message);
+  }
   for (const def of defs) {
     if (names.has(def.name)) errors.push(`duplicate agent name "${def.name}"`);
     names.add(def.name);
@@ -52,6 +60,16 @@ export function validate(defs, config) {
       if (!profile) errors.push(`${def.name}: unknown ${key} profile "${profileName}"`);
       else if (def.role === 'coder' && !profile.capabilities.editsFiles) {
         errors.push(`${def.name}: coder ${key} "${profileName}" has editsFiles: false`);
+      }
+    }
+
+    // The OS sandbox confines any CLI; without it, CLIs that cannot limit themselves are refused.
+    const strict = config.security && (config.security.commandAllowlist || config.security.confineFiles) && !config.security.trustUnconfinedCli && !sandboxed;
+    for (const key of ['llm', 'fallbackLlm']) {
+      const profile = config.llms[def[key]];
+      if (strict && profile?.type === 'cli' && UNCONFINED_BINS.includes(profile.bin)) {
+        errors.push(`${def.name}: ${key} "${def[key]}" uses ${profile.bin}, which cannot be limited to its folder or a command list `
+          + '(it can read any file and run any command) and the sandbox is off. Turn on security.sandbox, use another profile, or set security.trustUnconfinedCli: true');
       }
     }
 

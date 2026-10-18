@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { agentsCommand, useCommand } from './agents.js';
+import { cleanCommand } from './clean.js';
 import { costCommand } from './cost.js';
 import { doctorCommand } from './doctor.js';
 import { indexCommand } from './index-cmd.js';
@@ -95,6 +96,14 @@ export function buildProgram({ print = console.log, result = {} } = {}) {
     .option('--model <name>', 'model for this agent (default: the profile\'s model)')
     .option('--fallback <profile>', 'profile to retry with if a call fails')
     .action(act(useCommand));
+
+  program.command('clean')
+    .description('delete run logs and/or the search index (dry run unless --yes; worktrees are never touched)')
+    .option('--runs', 'run logs (prompts, diffs, agent output)')
+    .option('--index', 'the search index')
+    .option('--older-than <window>', 'only runs older than e.g. 30d')
+    .option('--yes', 'really delete')
+    .action(act(cleanCommand));
 
   program.command('migrate')
     .description('move an old-layout workspace (config/ and agents/ copies) to sourcerer.yaml')

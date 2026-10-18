@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { WORKSPACE_FILE, isLegacyWorkspace } from '../core/config.js';
 import { PACKAGE_DIR, defaultWorkspace } from './root.js';
@@ -20,12 +20,15 @@ export const WORKSPACE_TEMPLATE = `# Your Sourcerer settings: only what differs 
 // Target: [dir] > --root > SOURCERER_ROOT > ~/.config/sourcerer.
 export function initCommand(dir, { root }, print) {
   const target = resolve(dir ?? root ?? process.env.SOURCERER_ROOT ?? defaultWorkspace());
-  mkdirSync(target, { recursive: true });
+  mkdirSync(target, { recursive: true, mode: 0o700 });
   if (isLegacyWorkspace(target)) print(`note: ${target} has the old layout; run \`sourcerer migrate\` after this`);
   const files = [
     [WORKSPACE_FILE, () => writeFileSync(join(target, WORKSPACE_FILE), WORKSPACE_TEMPLATE)],
     ['.env.example', () => copyFileSync(join(PACKAGE_DIR, '.env.example'), join(target, '.env.example'))],
-    ['.env', () => copyFileSync(join(PACKAGE_DIR, '.env.example'), join(target, '.env'))],
+    ['.env', () => {
+      copyFileSync(join(PACKAGE_DIR, '.env.example'), join(target, '.env'));
+      chmodSync(join(target, '.env'), 0o600); // holds API keys
+    }],
   ];
   for (const [name, create] of files) {
     if (existsSync(join(target, name))) {

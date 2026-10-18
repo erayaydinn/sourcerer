@@ -2,6 +2,7 @@ import { runCli } from './cli.js';
 import { runLoop } from './agent-loop.js';
 import * as openaiCompat from './openai-compat.js';
 import * as anthropic from './anthropic.js';
+import { allowedCommands } from '../core/security.js';
 
 const APIS = { 'openai-compat': openaiCompat, anthropic };
 
@@ -21,6 +22,7 @@ export function runAgent(agent, { prompt, cwd, readDirs = [], sources, config, p
     pricing,
     onLog,
     signal,
+    security: config.security && { ...config.security, allowCommands: allowedCommands(config) },
   };
   if (agent.profile.type === 'cli') return runCli(agent.profile, opts);
   return runLoop(APIS[agent.profile.type], agent.profile, opts);

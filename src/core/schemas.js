@@ -90,6 +90,20 @@ export const factoryConfig = z.object({
       snippetLines: z.number().int().positive(),
     }).strict(),
   }).strict(),
+  security: z.object({
+    webAccess: z.boolean(),
+    commandAllowlist: z.boolean(),
+    allowCommands: z.array(z.string()),
+    extraCommands: z.array(z.string()).default([]),
+    confineFiles: z.boolean(),
+    trustUnconfinedCli: z.boolean(),
+    sandbox: z.object({
+      enabled: z.union([z.literal('auto'), z.boolean()]),
+      allowRead: z.array(z.string()).default([]),
+      allowWrite: z.array(z.string()).default([]),
+    }).strict().default({ enabled: 'auto', allowRead: [], allowWrite: [] }),
+    secretFiles: z.array(z.string()),
+  }).strict(),
   tools: z.object({
     maxOutputChars: z.number().int().positive(),
     runCommand: z.object({

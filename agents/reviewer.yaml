@@ -1,6 +1,6 @@
 name: reviewer
 role: reviewer
-llm: cursor-main
+llm: claude-cheap
 tools: [read_file, search_code, find_symbol, search_docs]
 fileScope: { read: ["**"], write: [] }
 maxTurns: 15

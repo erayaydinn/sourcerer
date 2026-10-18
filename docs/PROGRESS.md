@@ -544,3 +544,44 @@ Deliberately left out:
 - Using the index in the API-agent search tools.
 
 Not yet measured: indexing time, size and memory on a 10k+ file repo. Run `sourcerer index` there (it prints time and size).
+
+## Security hardening (done)
+
+Defaults (package config `security:`): webAccess false, commandAllowlist true, confineFiles true, trustUnconfinedCli false, secretFiles list.
+- Web tools are stripped from every agent unless webAccess (applySecurity in loadProject).
+- Claude:
+  - `run_command` becomes `Bash(<cmd>)` + `Bash(<cmd> *)` per allowed command. The allowed commands are allowCommands + extraCommands + each repo's setup/test.
+  - read and search tools become `Read|Grep|Glob(./**)` + `(//<readDir>/**)`.
+  - Verified with real calls: the allowed command runs; `&&`, `;`, `$()`, `| tee`, other commands, and reads/greps outside are all denied.
+- cursor-agent: verified to read files outside its workspace even with `--mode ask` and `--sandbox enabled`. So it is refused for any agent unless security.trustUnconfinedCli. The package default reviewer moved from cursor-main to claude-cheap (it now shares a provider with the coders, which is a warning only).
+- API agents: run_command also checks the full command against the allowlist; web_fetch is gone when web is off.
+- Secrets:
+  - secret files are skipped by the index and the worktree overlay, and shown to the reviewer by name only. This fixes a real leak: a worktree .env used to be sent to the reviewer.
+  - redact() is applied to every prompt Sourcerer sends, the coder notes, contract.txt and all run logs.
+- Disk: init creates the workspace 0700 and .env 0600. setup fixes looser permissions and doctor warns about them.
+- `sourcerer clean --runs [--older-than] --index [--yes]` (dry run by default, never touches worktrees).
+- doctor shows the security settings.
+- README "Security" section, with the honest limit: running tests runs coder-written code, so only a container/VM isolates.
+- Tests: 149 (redaction, patterns, Claude rules, defaults/cursor refusal, API allowlist, secret files for the reviewer and the index, permissions, clean).
+- Real-call cost for the checks: about $0.21 (Claude); the Cursor checks ran on the subscription.
+
+## macOS sandbox (done)
+
+- src/core/sandbox.js builds a Seatbelt profile and runs commands as `sandbox-exec -f <profile> <cmd>`.
+  - The profile: allow default, deny file read/write under $HOME, allow metadata reads under $HOME (realpath/getcwd need them), then read access to the CLI installs/logins (~/.local/bin, ~/.local/share/claude|cursor-agent, ~/.claude, ~/.claude.json, ~/.cursor, ~/Library/Keychains), ~/.gitconfig, the language toolchains (nvm, volta, asdf, pyenv, go, cargo, pnpm, composer, ...) and the given read paths, and write access to CLI state, package/build caches and the given write paths.
+  - Later allow rules override the earlier deny (verified). Child processes inherit the profile.
+- Applied to the agent CLIs (runCli: write = worktree + its main repo's .git, read = the other repo + its .git), the API agents' run_command, the orchestrator's test command and the worktree setup command (install scripts are repo code).
+- `security.sandbox.enabled: auto` (on where /usr/bin/sandbox-exec exists), `true` (error if unavailable) or `false`. `allowRead` / `allowWrite` add paths. No `security` block means no sandbox.
+- With the sandbox on, cursor-agent is no longer refused. Without it, the trustUnconfinedCli rule still applies. The package default reviewer stays claude-cheap, so the default is valid on every platform.
+- doctor reports whether the sandbox is on.
+- Verified with real calls (worktree under $HOME, a secret elsewhere in $HOME):
+  - claude: with its own read limits off, Read got EPERM; git status worked.
+  - cursor-agent --force: shell `cat` and its file reader both got "Operation not permitted"; git status worked. Without the sandbox it had read the same file.
+  - Before that: Claude's Keychain login needs ~/Library/Keychains, and cursor's launcher needs metadata reads.
+- Tests: 153 (profile shape, the on/off rules, and real sandbox-exec runs on macOS: allowed folder, denied home files, child processes, node, git in a worktree).
+
+Limits:
+- The network is open, since the CLIs need their API and Seatbelt can't filter by domain.
+- CLI logins must stay readable.
+- macOS only; Linux (bubblewrap/Landlock) is not done.
+- sandbox-exec is deprecated by Apple but still works.

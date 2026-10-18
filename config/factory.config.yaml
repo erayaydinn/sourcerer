@@ -40,6 +40,22 @@ rag:
     maxChars: 12000               # total snippet size per prompt
     snippetLines: 60
 
+# What agents may do. Secure by default; loosen in sourcerer.yaml (e.g. security.webAccess: true).
+# Note: allowing tests means running code the coder wrote, so only a container/VM fully isolates an agent.
+security:
+  webAccess: false                # web_search / web_fetch for every agent
+  commandAllowlist: true          # coders may only run these commands (+ each repo's setup/test command)
+  allowCommands: [git status, git diff, git log, git show, npm test, npm run, pnpm test, pnpm run, yarn test, yarn run,
+                  composer test, vendor/bin/phpunit, php vendor/bin/phpunit, go test, go build, go vet, pytest, python -m pytest]
+  extraCommands: []               # add your own here (keeps the list above)
+  confineFiles: true              # Claude may only read its worktree and the other repo
+  trustUnconfinedCli: false       # without the sandbox, cursor-agent cannot be confined (reads any file, runs any command)
+  sandbox:                        # macOS: agents, their commands and tests cannot read or write your home folder
+    enabled: auto                 # auto = on where available (macOS), true = required, false = off
+    allowRead: []                 # extra paths agents may read (absolute)
+    allowWrite: []                # extra paths agents may write (absolute)
+  secretFiles: ['.env', '.env.*', '*.pem', '*.key', '*.p12', '*.pfx', 'id_rsa*', 'id_ed25519*', '*credentials*', 'secrets.*', '*.kdbx']
+
 # Limits for the built-in tools used by API agents (openai-compat, anthropic).
 tools:
   maxOutputChars: 20000

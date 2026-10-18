@@ -3,12 +3,12 @@ import { runTool, toolSpecs } from '../tools/index.js';
 
 // Built-in agent loop for API adapters: call the model, run its tool calls, repeat.
 export async function runLoop(api, profile, opts) {
-  const { prompt, system, cwd, readDirs, sources, model, allowedTools, timeoutSec, maxTurns, toolConfig, pricing, onLog = () => {}, signal } = opts;
+  const { prompt, system, cwd, readDirs, sources, model, allowedTools, timeoutSec, maxTurns, toolConfig, pricing, onLog = () => {}, signal, security } = opts;
   const started = Date.now();
   const deadline = started + timeoutSec * 1000;
   const client = api.createClient(profile);
   const tools = toolSpecs(allowedTools);
-  const ctx = { cwd, readDirs, sources, allowedTools, toolConfig, signal };
+  const ctx = { cwd, readDirs, sources, allowedTools, toolConfig, signal, security };
   const usage = emptyUsage();
   const messages = [{ role: 'user', content: prompt }];
 

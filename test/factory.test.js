@@ -9,6 +9,7 @@ const config = factoryConfig.parse({
   budget: { maxCostPerRun: 5, maxCostPerAgent: 2 },
   review: { maxRounds: 3, testOutputChars: 2000 },
   rag: { enabled: false, maxFileBytes: 1000, exclude: [], context: { maxFiles: 0, maxChars: 100, snippetLines: 10 } },
+  security: { webAccess: true, commandAllowlist: false, allowCommands: [], confineFiles: false, trustUnconfinedCli: false, secretFiles: [] },
   tools: { maxOutputChars: 1000, runCommand: { allow: ['git'], timeoutSec: 10 } },
   llms: {
     claude: { type: 'cli', bin: 'claude', provider: 'anthropic', model: 'm1', capabilities: { editsFiles: true } },
