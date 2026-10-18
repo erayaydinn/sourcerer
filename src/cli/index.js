@@ -3,10 +3,13 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { costCommand } from './cost.js';
+import { doctorCommand } from './doctor.js';
 import { initCommand } from './init.js';
 import { logsCommand } from './logs.js';
+import { startRepl } from './repl.js';
 import { resolveRoot } from './root.js';
 import { runCommand } from './run.js';
+import { setupCommand } from './setup.js';
 import { smokeCommand } from './smoke.js';
 import { statusCommand } from './status.js';
 import { validateCommand } from './validate.js';
@@ -60,6 +63,23 @@ export function buildProgram({ print = console.log, result = {} } = {}) {
     .option('--by <group>', 'agent, role or llm', 'agent')
     .action(act(costCommand));
 
+  program.command('doctor')
+    .description('check tools, config, repos, keys (set/missing only) and pricing; exit 1 on any FAIL')
+    .option('--smoke', 'also say hi through each profile (costs a few cents)')
+    .action(act(doctorCommand, { needsRoot: false }));
+
+  program.command('setup')
+    .description('interactive: fill in what is missing (repos, roles, .env, .gitignore, CLI help, pricing rows)')
+    .option('--refresh', 'save CLI --help files again even if they exist')
+    .action(act(setupCommand, { needsRoot: false }));
+
+  program.command('index')
+    .description('build the vector index (not available yet)')
+    .action(() => {
+      print('Vector index not built yet (Phase 8b). Search uses git grep: search_code, find_symbol, search_docs.');
+      result.code = 0;
+    });
+
   program.command('validate')
     .description('check config and agents')
     .option('--llm <role|agent=profile>', 'check with an LLM override (repeatable)', collect, [])
@@ -85,9 +105,19 @@ export function buildProgram({ print = console.log, result = {} } = {}) {
 
 // Run only when executed directly (also through the `npm link` symlink), not when imported by tests.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
   const result = {};
   try {
-    await buildProgram({ result }).parseAsync();
+    // No subcommand (optionally --root <dir> and/or --plain): the TUI on a terminal, else the plain REPL.
+    const plain = args.includes('--plain');
+    const rest = args.filter((arg) => arg !== '--plain');
+    if (rest.length === 0 || (rest.length === 2 && rest[0] === '--root')) {
+      const rootFlag = rest[1];
+      if (!plain && process.stdin.isTTY && process.stdout.isTTY) {
+        const { startTui } = await import('../ui/tui.js');
+        result.code = await startTui({ rootFlag });
+      } else await startRepl({ rootFlag });
+    } else await buildProgram({ result }).parseAsync();
   } catch (error) {
     console.error(`error: ${error instanceof Error ? error.message : error}`);
     result.code = 1;

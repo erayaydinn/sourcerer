@@ -391,3 +391,57 @@ test('coder notes are trimmed to review.contextChars, keeping the end', async ()
   const out = await runTask('Trim', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
   assert.equal(out.coderNotes.backend, '89-THE-END');
 });
+
+test('aborting a run stops the running agent, skips fallback, keeps logs and ends aborted', async () => {
+  const { config, agents } = await setup();
+  const coder = agents.find((a) => a.name === 'coder-backend');
+  coder.fallbackLlm = 'backup';
+  coder.fallback = { type: 'cli', bin: 'y', provider: 'p', model: 'backup-model' };
+  const controller = new AbortController();
+  const base = fakeRun(['backend']);
+  const calls = [];
+  const run = (agent, opts) => {
+    calls.push(`${agent.name}:${agent.model}`);
+    if (agent.name !== 'coder-backend') return base(agent, opts);
+    opts.onLog('working...');
+    setTimeout(() => controller.abort(), 20);
+    return new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(opts.signal.reason)));
+  };
+  const out = await runTask('Stop me', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run, signal: controller.signal });
+  assert.equal(out.status, 'aborted');
+  assert.deepEqual(calls, ['planner:m', 'coder-backend:m'], 'no fallback, no reviewer');
+  assert.match(readFileSync(join(out.runDir, 'coder-backend.log'), 'utf8'), /working\.\.\.\nERROR: stopped by user/);
+  assert.equal(JSON.parse(readFileSync(join(out.runDir, 'summary.json'), 'utf8')).status, 'aborted');
+});
+
+test('abort during a budget question ends aborted, not stopped-budget', async () => {
+  const { config, agents } = await setup({ maxCostPerRun: 0.1, maxCostPerAgent: 10 });
+  const controller = new AbortController();
+  const confirm = () => { controller.abort(); return Promise.resolve(false); };
+  const out = await runTask('Pause stop', { config, agents, pricing: {}, bus: createBus(), confirm, run: fakeRun(['backend']), signal: controller.signal });
+  assert.equal(out.status, 'aborted');
+});
+
+test('a rate-limited failure counts its cost and skips a fallback on the same CLI account', async () => {
+  const { config, agents } = await setup();
+  const coder = agents.find((a) => a.name === 'coder-backend');
+  coder.profile = { type: 'cli', bin: 'claude', provider: 'anthropic', model: 'm' };
+  coder.fallbackLlm = 'claude-cheap';
+  coder.fallback = { type: 'cli', bin: 'claude', provider: 'anthropic', model: 'cheap' };
+  const calls = [];
+  const base = fakeRun(['backend']);
+  const run = (agent, opts) => {
+    calls.push(`${agent.name}:${agent.model}`);
+    if (agent.name !== 'coder-backend') return base(agent, opts);
+    return Promise.reject(Object.assign(new Error('claude failed (usage_limit_reached): limit hit'), {
+      rateLimited: true, cost: { usage: null, costUsd: 0.21, costSource: 'reported' },
+    }));
+  };
+  const out = await runTask('Limited', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
+  assert.equal(out.status, 'failed');
+  assert.match(out.error, /limit hit \(fallback claude-cheap skipped: same claude account\)/);
+  assert.deepEqual(calls, ['planner:m', 'coder-backend:m']);
+  const summary = JSON.parse(readFileSync(join(out.runDir, 'summary.json'), 'utf8'));
+  assert.equal(summary.perAgent['coder-backend'], 0.21);
+  assert.equal(summary.totalUsd, 0.5 + 0.21);
+});

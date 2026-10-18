@@ -41,3 +41,30 @@ test('runCli streams cursor-agent lines and estimates cost from pricing', async 
   assert.equal(result.costSource, 'estimated');
   assert.ok(Math.abs(result.costUsd - (31543 * 1 + 153 * 10 + 19200 * 0.1) / 1e6) < 1e-12);
 });
+
+test('a CLI that exits non-zero gives a short error (not its stdout) with the reported cost', async () => {
+  const fixture = join(bin, 'limited.jsonl');
+  writeFileSync(fixture, [
+    JSON.stringify({ type: 'system', subtype: 'init', tools: Array(200).fill('Tool') }),
+    JSON.stringify({ type: 'result', is_error: true, api_error_status: 429, api_error: 'usage_limit_reached', result: 'limit hit', total_cost_usd: 0.21, usage: {} }),
+  ].join('\n'));
+  const limitedBin = mkdtempSync(join(tmpdir(), 'sourcerer-limited-'));
+  writeFileSync(join(limitedBin, 'claude'), `#!/bin/sh\ncat > /dev/null\ncat '${fixture}'\necho 'some stderr' >&2\nexit 1\n`);
+  chmodSync(join(limitedBin, 'claude'), 0o755);
+  const saved = process.env.PATH;
+  process.env.PATH = `${limitedBin}:${saved}`;
+  try {
+    await assert.rejects(runCli({ bin: 'claude' }, { prompt: 'x', cwd: limitedBin, readDirs: [], model: 'm', allowedTools: [], timeoutSec: 10, pricing: {} }), (error) => {
+      assert.equal(error.message, 'claude failed (usage_limit_reached): limit hit');
+      assert.equal(error.cost.costUsd, 0.21);
+      assert.equal(error.rateLimited, true);
+      return true;
+    });
+
+    writeFileSync(join(limitedBin, 'claude'), '#!/bin/sh\ncat > /dev/null\necho \'{"type":"system"}\'\necho "boom: auth expired" >&2\nexit 2\n');
+    await assert.rejects(runCli({ bin: 'claude' }, { prompt: 'x', cwd: limitedBin, readDirs: [], model: 'm', allowedTools: [], timeoutSec: 10, pricing: {} }),
+      { message: 'claude exited with code 2: boom: auth expired' });
+  } finally {
+    process.env.PATH = saved;
+  }
+});

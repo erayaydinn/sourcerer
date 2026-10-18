@@ -6,19 +6,32 @@ import * as cursor from './cli/cursor.js';
 // Keyed by profile `bin`. codex is added once its output is verified.
 const RECIPES = { claude, 'cursor-agent': cursor };
 
-export async function runCli(profile, { prompt, system, cwd, readDirs, model, allowedTools, timeoutSec, pricing, onLog }) {
+export async function runCli(profile, { prompt, system, cwd, readDirs, model, allowedTools, timeoutSec, pricing, onLog, signal }) {
   const recipe = RECIPES[profile.bin];
   if (!recipe) throw new Error(`no CLI recipe for "${profile.bin}"`);
   const fullPrompt = system ? `${system}\n\n${prompt}` : prompt;
   const { args, input } = recipe.command({ prompt: fullPrompt, model, cwd, readDirs, allowedTools });
 
+  signal?.throwIfAborted();
   const started = Date.now();
-  const subprocess = execa(profile.bin, args, { cwd, input, timeout: timeoutSec * 1000 });
+  // Own process group, so stopping it also stops whatever the agent started (tests, servers, ...).
+  const subprocess = execa(profile.bin, args, { cwd, input, timeout: timeoutSec * 1000, detached: true });
+  const stop = () => killGroup(subprocess.pid);
+  signal?.addEventListener('abort', stop, { once: true });
   if (onLog && recipe.logLine) streamLines(subprocess.stdout, (line) => {
     const text = safeLogLine(recipe, line);
     if (text) onLog(text);
   });
-  const { stdout } = await subprocess;
+  let stdout;
+  try {
+    ({ stdout } = await subprocess);
+  } catch (error) {
+    stop();
+    signal?.throwIfAborted();
+    throw explainFailure(profile.bin, recipe, error, timeoutSec);
+  } finally {
+    signal?.removeEventListener('abort', stop);
+  }
   const parsed = recipe.parse(stdout);
 
   const cost = typeof parsed.costUsd === 'number'
@@ -44,4 +57,32 @@ function safeLogLine(recipe, line) {
   } catch {
     return null;
   }
+}
+
+// SIGTERM the process group, then SIGKILL whatever is left. Group kill is POSIX-only (Windows needs WSL).
+export function killGroup(pid) {
+  const send = (sig) => {
+    try {
+      process.kill(-pid, sig);
+    } catch {
+      // already gone
+    }
+  };
+  send('SIGTERM');
+  setTimeout(() => send('SIGKILL'), 3000).unref();
+}
+
+// A short, readable error instead of execa's message (which embeds the whole stdout).
+// Uses the recipe's own error when the stream ends in a failed result (rate limit, max turns, ...).
+function explainFailure(bin, recipe, error, timeoutSec) {
+  if (error.stdout && !error.timedOut) {
+    try {
+      recipe.parse(error.stdout);
+    } catch (parsed) {
+      if (parsed.cost || parsed.rateLimited) return parsed;
+    }
+  }
+  const what = error.timedOut ? `timed out after ${timeoutSec}s` : `exited with code ${error.exitCode ?? '?'}`;
+  const stderr = String(error.stderr ?? '').trim().split('\n').slice(-3).join(' ').slice(-300);
+  return new Error(`${bin} ${what}${stderr ? `: ${stderr}` : ''}`);
 }

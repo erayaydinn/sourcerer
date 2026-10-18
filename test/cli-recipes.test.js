@@ -32,7 +32,8 @@ test('claude logLine shows assistant text and tool calls only', () => {
 });
 
 test('claude parse throws on is_error', () => {
-  assert.throws(() => claude.parse(JSON.stringify({ is_error: true, subtype: 'error_max_turns' })), /error_max_turns/);
+  assert.throws(() => claude.parse(JSON.stringify({ type: 'result', is_error: true, subtype: 'error_max_turns' })), /error_max_turns/);
+  assert.throws(() => claude.parse('{"type":"assistant","message":{"content":[]}}'), /stream ended without a result/);
 });
 
 const cursorStream = readFileSync(new URL('./fixtures/cursor-stream.jsonl', import.meta.url), 'utf8');
@@ -71,4 +72,21 @@ test('cursor logLine shows assistant text and started tool calls only', () => {
 test('cursor parse throws on errors and on a stream without result', () => {
   assert.throws(() => cursor.parse(JSON.stringify({ type: 'result', is_error: true, subtype: 'error', result: 'boom' })), /boom/);
   assert.throws(() => cursor.parse('{"type":"assistant","message":{"content":[]}}'), /without a result/);
+});
+
+// Trimmed from a real run that hit the Claude subscription's 5-hour limit after doing some work.
+const rateLimited = [
+  { type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour' } },
+  { type: 'result', subtype: 'success', is_error: true, api_error_status: 429, api_error: 'usage_limit_reached',
+    result: "You've hit your session limit · resets 11:40pm (Europe/Istanbul)", total_cost_usd: 0.2107,
+    usage: { input_tokens: 10, cache_creation_input_tokens: 5, cache_read_input_tokens: 100, output_tokens: 7 } },
+].map((line) => JSON.stringify(line)).join('\n');
+
+test('claude parse turns a limit into a short error that carries the cost', () => {
+  assert.throws(() => claude.parse(rateLimited), (error) => {
+    assert.equal(error.message, "claude failed (usage_limit_reached): You've hit your session limit · resets 11:40pm (Europe/Istanbul)");
+    assert.equal(error.rateLimited, true);
+    assert.deepEqual(error.cost, { usage: { inputTokens: 15, outputTokens: 7, cachedTokens: 100 }, costUsd: 0.2107, costSource: 'reported' });
+    return true;
+  });
 });

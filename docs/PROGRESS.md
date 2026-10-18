@@ -252,9 +252,7 @@ Known issues:
 - search_code results aren't ranked, so large repos rely on truncation (tools.maxOutputChars).
 - The contract is matched case-insensitively and the code isn't. That's by design, but note it.
 
-## Phase 9: TUI (skipped)
-
-Skipped by your decision: no `sourcerer ui`, and ink and react are not installed. To watch runs, use `sourcerer run --tmux`, `sourcerer logs -f` and `sourcerer status`/`cost`.
+## Phase 9: TUI (first skipped, later built: see "Phase 9: ink TUI" at the end)
 
 Next: decide on 8b after real use, or Phase 10 (optional decide.js).
 
@@ -340,3 +338,116 @@ Changes:
 4. Test context: the reviewer sees the exact test command and that it ran only on this machine, or "no test command configured; the coder's own test claims are unverified".
 - Each round's reviewer prompt is saved to runs/<id>/reviewer.r<N>.prompt.txt, so "what did the reviewer see" can be answered later.
 - Tests: 99 total. Verified on the real worktree: .gitignore and exclude-list.txt now show in the reviewer prompt with their contents.
+
+## Phase 7 follow-up: REPL, doctor, setup, stop (done)
+
+The brief said "Phases 1-6 done"; run/status/logs/cost/validate/smoke/init already existed and were kept. Decisions:
+- Stopping is a real stop, so it needed a minimal core change (you chose this).
+- No JSDoc/checkJs (no-TypeScript rule).
+- One file per command kept; added repl.js, print.js, doctor.js and setup.js.
+- No ripgrep check (search uses git grep).
+- Pricing rows are added commented, not as empty values.
+
+Built:
+- Stop: `runTask({ signal })`.
+  - CLI agents run in their own process group, and abort or timeout kills the whole group (SIGTERM, SIGKILL after 3s).
+  - The signal also reaches the API loop (SDK requests and tools), setup and test commands, and run_command.
+  - No fallback after a stop. Status `aborted`, error "stopped by user", logs kept.
+  - `sourcerer run` handles Ctrl+C itself: once stops, twice exits (needed because agents no longer share the terminal's process group).
+- REPL (`sourcerer` with no arguments), node:readline:
+  - One task at a time. Live events (print.js, shared with `run`). At the end, the total from summary.json, coder notes and worktrees.
+  - Commands: /status /cost /logs /llm (validated, session-only) /approve /reject /stop /doctor /help /exit.
+  - Budget question: y/n or /approve /reject; /stop aborts it.
+  - Ctrl+C once stops the task; twice (or twice within 2s when idle) exits.
+- `sourcerer doctor [--smoke]` (read-only):
+  - Checks node 20.12+, git, tmux, the workspace, config validation, repos (exist, git, clean/dirty), CLIs used by profiles (version), keyEnv (set/missing only, values never printed), pricing for models that don't report cost, .gitignore (.env, runs/) when the workspace is a git repo, docs/cli-help per installed CLI, and a login reminder.
+  - FAIL only for what is actually used. Exit 1 on any FAIL.
+- `sourcerer setup [--refresh]` (interactive, re-runnable):
+  - Runs init if needed.
+  - Writes repo paths (validated) and per-role LLM/model (typed, never suggested) to .env.
+  - Adds empty keyEnv names; keys are never asked for.
+  - Appends .gitignore lines, saves `<bin> --help`, adds commented pricing rows.
+  - Lists the changes, then runs doctor.
+- `sourcerer index`: stub ("vector index not built yet (Phase 8b); search uses git grep").
+- .env reload: values that came from a .env are refreshed on every load (REPL edits, several roots). Shell variables still win.
+- pricing.yaml template is now block style (`models:` plus commented rows), and an empty `models:` is accepted.
+- docs/cli-help/cursor-agent.txt refreshed for 2026.10.16. Every flag the recipe uses is still there.
+- Tests: 113 total (cancel incl. process-tree kill, REPL via streams, setup on a fresh clone, re-run changes nothing, doctor masking/exit code, .env reload).
+
+Verified for real in tmux, with the fake claude:
+- REPL: one Ctrl+C killed both coders (2 → 0 processes), the run ended aborted, and the REPL took the next task. A double Ctrl+C exited 130 with nothing left behind.
+- `sourcerer run`: Ctrl+C gave summary status `aborted` / "stopped by user".
+- Doctor was also run on this machine.
+
+Deliberately left out:
+- Colors and fancy UI.
+- REPL history and completion.
+- Queueing several tasks (a second task while one runs is refused).
+- `logs -f` inside the REPL.
+- Checking CLI login state (not reliable).
+- /pause answers for --interactive inside the REPL (the REPL has no --interactive).
+
+Known issues:
+- Process-group kill is POSIX-only (Windows needs WSL).
+- If Sourcerer itself is killed with SIGKILL, detached agent CLIs keep running.
+- The cursor-agent stream output format of 2026.10.16 isn't re-verified: run `sourcerer doctor --smoke`.
+
+## Phase 9: ink TUI (done)
+
+Why: the plain REPL had no Claude-CLI-like input area. You chose option A: Node 22 + ink 8.
+
+Environment:
+- Node 22.23.3 installed with nvm (`--reinstall-packages-from=20`) and made the nvm default. Node 20 is kept; `nvm use 20` switches back.
+- The reinstall copied an old corepack (0.29.3) that hijacked `pnpm` and failed on npm's new signing keys. Fixed with corepack@latest (0.36.0), `corepack disable pnpm`, and a reinstall of pnpm 9.15.9.
+- `sourcerer` is linked under Node 22. Terminals opened before the switch stay on Node 20 until reopened.
+- engines `>=22`, `.nvmrc` = 22. doctor now requires Node 22.
+
+Packages (pinned):
+- ink 8.0.0 (needs Node 22; ink 7 too, ink 6.8 was the Node 20 option).
+- react 19.3.0, chosen over 19.3.1 because that was only 3 days old.
+- dev: ink-testing-library 4.0.0. No @types.
+
+Built:
+- src/ui/session.js: the UI-agnostic session (task queue, slash commands, budget question, /llm, Ctrl+C), moved out of repl.js. Both UIs are thin layers over it.
+- src/cli/repl.js: the plain REPL over the session, used when not on a TTY or with `--plain`.
+- src/ui/tui.js: ink via `React.createElement`, no build step.
+  - Header: status, round, total cost, unknown count and overrides.
+  - Agent list: ·/●/✓/✗, round and cost.
+  - Main view: events, or any agent's live log; Tab cycles.
+  - Budget banner.
+  - Bordered input: Enter submits, ↑↓ history (saved to ~/.config/sourcerer/history), Tab completes /commands, Esc clears.
+  - A chunk ending in Enter (paste, tmux send-keys) is typed, then submitted.
+- Entry: `sourcerer` (or `--root x`) on a TTY starts the TUI; `--plain` or non-TTY starts the REPL.
+- executeTask accepts an already-loaded project, so config warnings are not printed twice per task.
+- Lint ignores worktrees/, and `pnpm test` only runs test/**. Before this, a target repo's worktree inside the workspace was linted and its tests were run as Sourcerer's own.
+- Tests: 117 (4 ink render tests: agent states + cost + Tab to a live log, one task at a time + history + completion + Ctrl+C + /exit, budget banner + /reject, paste with Enter).
+
+Verified for real in tmux (120x26) with the fake claude:
+- The layout and live updates work.
+- Tab showed an agent's live log.
+- One Ctrl+C killed both coders (2 → 0), and the header went idle with "2 unknown".
+- A double Ctrl+C exited.
+
+Deliberately left out: mouse, panel resizing, themes, multi-line task input, scrolling back through the view (the newest lines are shown).
+
+Known issues:
+- Config warnings for unused profiles (missing keys) still appear at each task start. doctor tells them apart; validate does not.
+- A very small terminal squeezes the panels (no minimum-size check).
+
+## CLI failures and TUI wrapping (done), after run-side-frontend-login-sayfasi-yap
+
+What happened: the Claude subscription hit its 5-hour session limit during the frontend coder. Claude said "You've hit your session limit · resets 11:40pm".
+- The error shown was execa's message, which is the whole stdout (6.5k characters of stream JSON).
+- The first attempt's reported cost ($0.21) was recorded as unknown and not counted in the budget.
+- The fallback (claude-cheap) is the same Claude account, so it failed right away.
+- In the TUI, long lines were cut off.
+
+Fixes:
+- claude recipe: a failed result throws `claude failed (<api_error>): <message>`, with `error.cost` (usage + reported cost) and `error.rateLimited` (429 / usage_limit). A stream without a result line is an error (it used to be parsed as a result).
+- runCli: on a non-zero exit, the recipe's structured error is used when there is one. Otherwise `<bin> exited with code N: <last stderr lines>`, or `timed out after Ns`. stdout is never dumped.
+- callAgent: a failed attempt's reported cost is logged and charged to the budget. On a rate limit, a fallback with the same CLI bin (same account) is skipped, with a note in the error.
+- TUI: lines are wrapped to the panel width (wrapLines) instead of truncated, so errors and logs are readable in full. The budget banner wraps too.
+- Tests: 122 total (limit parse with cost, short errors from a fake CLI, failed-call cost in summary + skipped same-account fallback, wrapLines, long line in the TUI).
+- Verified: the real failure replayed through the new path gives a one-line error, and tmux at 100 columns shows wrapped lines.
+
+Suggestion, not done: give coders a fallback on another account/provider (e.g. `fallbackLlm: cursor-main`) so a Claude limit doesn't stop the run.

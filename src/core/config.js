@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parseEnv } from 'node:util';
 import { parse } from 'yaml';
 import { z } from 'zod';
 import { interpolate } from './env.js';
@@ -15,10 +16,24 @@ export function readYaml(file, schema) {
   return result.data;
 }
 
-// Shell variables win over .env (process.loadEnvFile does not override them).
+// Values this process took from a .env file, so a later load (REPL, another root) can replace them.
+const fromEnvFile = new Set();
+
+// Shell variables win over .env. Values that came from a .env are refreshed on every load.
 function loadEnv(rootDir) {
   const file = resolve(rootDir, '.env');
-  if (existsSync(file)) process.loadEnvFile(file);
+  const values = existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
+  for (const name of fromEnvFile) {
+    if (!(name in values)) {
+      delete process.env[name];
+      fromEnvFile.delete(name);
+    }
+  }
+  for (const [name, value] of Object.entries(values)) {
+    if (name in process.env && !fromEnvFile.has(name)) continue;
+    process.env[name] = value;
+    fromEnvFile.add(name);
+  }
 }
 
 export function loadConfig(rootDir) {

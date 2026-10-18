@@ -3,7 +3,7 @@
 ## Working rules
 - Work ONE phase at a time. Before each phase, propose a short plan and wait for my approval. After each phase, stop, summarize what was built, and tell me how to test it.
 - At the start of each session, read docs/PLAN.md and docs/PROGRESS.md first. At the end of each phase, update docs/PROGRESS.md (done, deliberately left out, known issues, next step).
-- Pure JavaScript, Node 20+, ESM ("type": "module"). No TypeScript source files.
+- Pure JavaScript, Node 22+, ESM ("type": "module"). No TypeScript source files.
 - No TypeScript tooling at all: no typescript package, no tsc, no `// @ts-check`, no jsconfig.json. Zod validates data at runtime. Define event names and payloads in one file (events.js).
 - Keep the core a pure library. CLI, tmux and TUI are thin layers on top of the same events and logs.
 

@@ -33,17 +33,24 @@ export function logLine(line) {
 }
 
 // The last line of the stream is the result (same shape as --output-format json).
+// A failed result still reports its cost, so the error carries it (error.cost) for the budget.
 export function parse(stdout) {
   const json = JSON.parse(stdout.trim().split('\n').at(-1));
-  if (json.is_error) throw new Error(`claude failed (${json.subtype}): ${json.result ?? ''}`);
-  const usage = json.usage;
-  return {
-    output: json.result,
+  if (json.type !== 'result') throw new Error('claude: stream ended without a result');
+  const usage = json.usage ?? {};
+  const cost = {
     usage: {
-      inputTokens: usage.input_tokens + usage.cache_creation_input_tokens,
-      outputTokens: usage.output_tokens,
-      cachedTokens: usage.cache_read_input_tokens,
+      inputTokens: (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0),
+      outputTokens: usage.output_tokens ?? 0,
+      cachedTokens: usage.cache_read_input_tokens ?? 0,
     },
     costUsd: json.total_cost_usd,
   };
+  if (json.is_error) {
+    const error = new Error(`claude failed (${json.api_error ?? json.subtype}): ${json.result ?? ''}`);
+    error.cost = { ...cost, costSource: typeof cost.costUsd === 'number' ? 'reported' : 'unknown' };
+    error.rateLimited = json.api_error_status === 429 || /usage_limit|rate_limit/.test(json.api_error ?? '');
+    throw error;
+  }
+  return { output: json.result, ...cost };
 }

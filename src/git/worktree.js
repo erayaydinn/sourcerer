@@ -20,7 +20,7 @@ export function taskDir(config, slug) {
 }
 
 // Creates branch feat/<slug> and a worktree per side. Returns { side: dir }.
-export async function createWorktrees(config, slug, sides) {
+export async function createWorktrees(config, slug, sides, { signal } = {}) {
   const branch = `feat/${slug}`;
   const created = {};
   try {
@@ -35,7 +35,7 @@ export async function createWorktrees(config, slug, sides) {
       created[side] = dir;
       if (repo.setup) {
         const [bin, ...args] = repo.setup.run;
-        await execa(bin, args, { cwd: dir, timeout: repo.setup.timeoutSec * 1000 });
+        await execa(bin, args, { cwd: dir, timeout: repo.setup.timeoutSec * 1000, cancelSignal: signal });
       }
     }
   } catch (error) {

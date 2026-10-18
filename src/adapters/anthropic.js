@@ -4,14 +4,14 @@ export function createClient(profile) {
   return new Anthropic({ apiKey: profile.keyEnv ? process.env[profile.keyEnv] : undefined });
 }
 
-export async function call({ client, profile, model, system, messages, tools, timeoutMs }) {
+export async function call({ client, profile, model, system, messages, tools, timeoutMs, signal }) {
   const response = await client.messages.create({
     model,
     max_tokens: profile.maxOutputTokens,
     system,
     messages,
     tools: tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })),
-  }, { timeout: timeoutMs });
+  }, { timeout: timeoutMs, signal });
 
   const usage = response.usage;
   return {

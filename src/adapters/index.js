@@ -6,7 +6,7 @@ import * as anthropic from './anthropic.js';
 const APIS = { 'openai-compat': openaiCompat, anthropic };
 
 // Runs one agent call and returns { output, usage, costUsd, costSource, durationMs }.
-export function runAgent(agent, { prompt, cwd, readDirs = [], sources, config, pricing, onLog }) {
+export function runAgent(agent, { prompt, cwd, readDirs = [], sources, config, pricing, onLog, signal }) {
   const opts = {
     prompt,
     system: agent.systemPrompt,
@@ -20,6 +20,7 @@ export function runAgent(agent, { prompt, cwd, readDirs = [], sources, config, p
     toolConfig: config.tools,
     pricing,
     onLog,
+    signal,
   };
   if (agent.profile.type === 'cli') return runCli(agent.profile, opts);
   return runLoop(APIS[agent.profile.type], agent.profile, opts);

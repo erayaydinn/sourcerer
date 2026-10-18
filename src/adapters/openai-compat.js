@@ -6,7 +6,7 @@ export function createClient(profile) {
   return new OpenAI({ baseURL: profile.baseURL, apiKey });
 }
 
-export async function call({ client, profile, model, system, messages, tools, timeoutMs }) {
+export async function call({ client, profile, model, system, messages, tools, timeoutMs, signal }) {
   const response = await client.chat.completions.create({
     model,
     max_tokens: profile.maxOutputTokens,
@@ -14,7 +14,7 @@ export async function call({ client, profile, model, system, messages, tools, ti
     tools: tools.length
       ? tools.map((tool) => ({ type: 'function', function: tool }))
       : undefined,
-  }, { timeout: timeoutMs });
+  }, { timeout: timeoutMs, signal });
 
   const message = response.choices[0].message;
   const cached = response.usage?.prompt_tokens_details?.cached_tokens ?? 0;

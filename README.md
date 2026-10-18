@@ -15,7 +15,7 @@ Every agent can use a different model and CLI. Supported adapters: the `claude` 
 
 ## Requirements
 
-- Node.js 20.12+ and git
+- Node.js 22+ and git
 - At least one agent CLI, logged in: `claude` (Claude Code) and/or `cursor-agent`
 - Optional: `tmux` (for `--tmux`; on Windows use WSL)
 
@@ -33,14 +33,17 @@ SOURCERER_FRONTEND=/path/to/frontend-repo
 SOURCERER_BACKEND=/path/to/backend-repo
 ```
 
-Then check the setup:
+Or let the wizard fill in what is missing (repo paths, LLM per role, key names, pricing rows):
 
 ```sh
-sourcerer validate        # agents -> LLM profile -> model
-sourcerer smoke           # says hi to each configured profile (costs a few cents)
+sourcerer setup           # interactive, safe to re-run, never asks for API keys
+sourcerer doctor          # OK / WARN / FAIL per check; exit 1 on any FAIL
+sourcerer doctor --smoke  # also says hi through each profile (costs a few cents)
 ```
 
 ## Usage
+
+Run `sourcerer` with no arguments for the interactive terminal UI: an agent list with status and cost, a live view of the events or of any agent's output (Tab switches), and an input box with history (↑↓) and `/command` completion (Tab). Type a task to start it (one at a time). `sourcerer --plain` (or a non-terminal stdin/stdout) gives a plain line-based session with the same commands. Commands: `/status`, `/cost`, `/logs <runId>`, `/llm role=profile` (this session only), `/approve`, `/reject` (answer a budget question), `/stop`, `/doctor`, `/help`, `/exit`. Ctrl+C once stops the running task (the agents and everything they started are killed, and logs are kept); twice exits.
 
 ```sh
 sourcerer run "Add GET /api/users with pagination"
@@ -48,6 +51,7 @@ sourcerer run --side backend "Add rate limiting"          # only the backend
 sourcerer run --tmux "..."                                 # one pane per agent
 sourcerer run --interactive "..."                          # pause before each review / fix round
 sourcerer run --llm reviewer=claude-cheap "..."            # swap an agent's LLM for one run
+# Ctrl+C once stops the task cleanly, twice exits
 
 sourcerer status                                           # recent runs
 sourcerer logs [runId] [--agent coder-backend] [-f]

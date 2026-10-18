@@ -6,18 +6,35 @@ import { createAgent } from '../core/factory.js';
 import { checkSides, runTask } from '../core/orchestrator.js';
 import { taskSlug } from '../git/worktree.js';
 import { insideTmux, launch, openLogPanes, openShellWindow, quote } from '../ui/tmux.js';
+import { printEvents, printResult } from './print.js';
 import { loadProject, reportProblems } from './project.js';
 
 const CLI = fileURLToPath(new URL('./index.js', import.meta.url));
 
+// Loads the project (unless given, already checked), wires live printing and runs one task.
+// Shared by `sourcerer run` and the session. Returns null if the config has errors (already printed).
+export async function executeTask(task, { root, llm = [], project: loaded, sides, confirm, pause, signal, bus = createBus(), run }, print) {
+  const project = loaded ?? loadProject(root, llm);
+  if (!loaded && !reportProblems(project, print)) return null;
+  const { config, defs } = project;
+  printEvents(bus, print);
+  const result = await runTask(task, {
+    config,
+    agents: defs.map((def) => createAgent(def, config)),
+    pricing: loadPricing(config.paths.pricing),
+    bus, confirm, pause, sides, signal, run,
+  });
+  printResult(result, print);
+  return result;
+}
+
 export async function runCommand(task, { root, tmux, interactive, llm, side }, print) {
   const inPanes = process.env.SOURCERER_PANES === '1';
   const sides = side.length ? checkSides(side) : undefined;
-  const project = loadProject(root, llm);
-  if (!reportProblems(project, print)) return 1;
 
   // --tmux: re-run this command inside a tmux session/window, which then opens the panes.
   if (tmux && !inPanes) {
+    if (!reportProblems(loadProject(root, llm), print)) return 1;
     const flags = [
       ...(interactive ? ['--interactive'] : []),
       ...llm.flatMap((pair) => ['--llm', quote(pair)]),
@@ -27,49 +44,54 @@ export async function runCommand(task, { root, tmux, interactive, llm, side }, p
     return launch({ name: `sourcerer-${taskSlug(task)}`, command, cwd: root, inside: insideTmux() });
   }
 
-  const { config, defs } = project;
+  // Agents run in their own process group, so Ctrl+C must be handled here:
+  // once stops the task cleanly (logs kept), twice exits.
+  const controller = new AbortController();
+  const onInterrupt = () => {
+    if (controller.signal.aborted) process.exit(130);
+    print('\nstopping... (Ctrl+C again to exit now)');
+    controller.abort();
+  };
+  process.on('SIGINT', onInterrupt);
+  const ask = async (question) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.on('SIGINT', onInterrupt);
+    try {
+      return (await rl.question(question, { signal: controller.signal })).trim().toLowerCase();
+    } catch {
+      return '';
+    } finally {
+      rl.close();
+    }
+  };
+
   const bus = createBus();
-  printEvents(bus, print);
-  if (inPanes) openPanesOn(bus, defs, interactive, print);
+  if (inPanes) openPanesOn(bus, loadProject(root, llm).defs, interactive, print);
   else if (interactive) {
     bus.on('worktrees.ready', (e) => {
-      for (const [side, dir] of Object.entries(e.worktrees)) print(`  ${side} worktree: ${dir}`);
+      for (const [s, dir] of Object.entries(e.worktrees)) print(`  ${s} worktree: ${dir}`);
     });
   }
 
-  const result = await runTask(task, {
-    config,
-    agents: defs.map((def) => createAgent(def, config)),
-    pricing: loadPricing(config.paths.pricing),
-    bus,
-    confirm: async (message) => (await ask(`${message} [y/N] `)) === 'y',
-    pause: interactive ? pause : undefined,
-    sides,
-  });
-
-  print(`\n${result.status}${result.error ? `: ${result.error}` : ''}`);
-  for (const [where, comments] of Object.entries(result.finalComments ?? {})) {
-    for (const comment of comments) print(`- [${where}] ${comment}`);
+  try {
+    const result = await executeTask(task, {
+      root, llm, sides, bus, signal: controller.signal,
+      confirm: async (message) => (await ask(`${message} [y/N] `)) === 'y',
+      // --interactive pause points. Empty answer means continue.
+      pause: interactive ? async (message) => {
+        const answer = await ask(`${message} [C]ontinue / [s]kip / [a]bort `);
+        return answer.startsWith('a') ? 'abort' : answer.startsWith('s') ? 'skip' : 'continue';
+      } : undefined,
+    }, print);
+    if (!result) return 1;
+    if (inPanes) {
+      const session = process.env.SOURCERER_SESSION;
+      print(`\nPanes stay open. Close them with: ${session ? `tmux kill-session -t ${session}` : 'tmux kill-window'}`);
+    }
+    return ['approved', 'changes-requested'].includes(result.status) ? 0 : 1;
+  } finally {
+    process.off('SIGINT', onInterrupt);
   }
-  for (const [side, notes] of Object.entries(result.coderNotes ?? {})) {
-    print(`\n--- ${side} coder notes (end of last answer) ---\n${notes.trim()}`);
-  }
-  print(`\nrun: ${result.runDir}`);
-  for (const [side, dir] of Object.entries(result.worktrees)) print(`${side} worktree: ${dir}`);
-  if (inPanes) {
-    const session = process.env.SOURCERER_SESSION;
-    print(`\nPanes stay open. Close them with: ${session ? `tmux kill-session -t ${session}` : 'tmux kill-window'}`);
-  }
-  return ['approved', 'changes-requested'].includes(result.status) ? 0 : 1;
-}
-
-function printEvents(bus, print) {
-  bus.on('agent.started', (e) => print(`> ${e.agent} started (${e.llm}, round ${e.round}, attempt ${e.attempt})`));
-  bus.on('agent.finished', (e) => print(`< ${e.agent} ${e.status} $${e.costUsd ?? '?'} (${e.costSource}) ${Math.round(e.durationMs / 1000)}s${e.error ? ` ${e.error}` : ''}`));
-  bus.on('tests.finished', (e) => print(`  tests ${e.side} round ${e.round}: ${e.passed ? 'passed' : 'FAILED'} -> ${e.file}`));
-  bus.on('diff.ready', (e) => print(`  diff ${e.side}: ${e.filesChanged} files -> ${e.file}`));
-  bus.on('review.finished', (e) => print(`  review round ${e.round}: ${e.verdict}`));
-  bus.on('cost.updated', (e) => print(`  total $${e.totalUsd.toFixed(4)}`));
 }
 
 function openPanesOn(bus, defs, interactive, print) {
@@ -78,17 +100,4 @@ function openPanesOn(bus, defs, interactive, print) {
   const paneAgents = [...coders, ...defs.filter((def) => def.role === 'reviewer')].map((def) => def.name);
   bus.on('run.started', (e) => openLogPanes(e.runDir, paneAgents).catch(report));
   if (interactive) bus.on('worktrees.ready', (e) => openShellWindow(e.worktrees).catch(report));
-}
-
-async function ask(question) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question(question);
-  rl.close();
-  return answer.trim().toLowerCase();
-}
-
-// --interactive pause points. Empty answer means continue.
-async function pause(message) {
-  const answer = await ask(`${message} [C]ontinue / [s]kip / [a]bort `);
-  return answer.startsWith('a') ? 'abort' : answer.startsWith('s') ? 'skip' : 'continue';
 }

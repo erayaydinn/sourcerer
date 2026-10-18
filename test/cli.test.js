@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, renameSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildProgram } from '../src/cli/index.js';
@@ -97,5 +97,25 @@ test('budget and round limits come from env as numbers, with YAML defaults', () 
     assert.throws(() => loadConfig(root), /maxRounds/);
   } finally {
     for (const name of ['SOURCERER_MAX_COST_PER_RUN', 'SOURCERER_MAX_COST_PER_AGENT', 'SOURCERER_MAX_ROUNDS']) delete process.env[name];
+  }
+});
+
+test('.env edits are picked up on the next load; shell variables still win', () => {
+  const envPath = join(root, '.env');
+  const before = readFileSync(envPath, 'utf8');
+  try {
+    writeFileSync(envPath, `${before}SOURCERER_MAX_ROUNDS=2\n`);
+    assert.equal(loadConfig(root).review.maxRounds, 2);
+    writeFileSync(envPath, `${before}SOURCERER_MAX_ROUNDS=1\n`);
+    assert.equal(loadConfig(root).review.maxRounds, 1, 'changed value is reloaded');
+    writeFileSync(envPath, before);
+    assert.equal(loadConfig(root).review.maxRounds, 3, 'removed value falls back to the default');
+    process.env.SOURCERER_MAX_COST_PER_RUN = '9';
+    writeFileSync(envPath, `${before}SOURCERER_MAX_COST_PER_RUN=1\n`);
+    assert.equal(loadConfig(root).budget.maxCostPerRun, 9, 'shell wins');
+  } finally {
+    writeFileSync(envPath, before);
+    delete process.env.SOURCERER_MAX_COST_PER_RUN;
+    loadConfig(root);
   }
 });

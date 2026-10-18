@@ -70,12 +70,13 @@ export const factoryConfig = z.object({
   llms: z.record(z.string(), llmProfile),
 }).strict();
 
+// `models:` with only commented rows below it parses as null: treat it as empty.
 export const pricingFile = z.object({
-  models: z.record(z.string(), z.object({
+  models: z.preprocess((value) => value ?? {}, z.record(z.string(), z.object({
     input: z.number().nonnegative(),
     output: z.number().nonnegative(),
     cachedInput: z.number().nonnegative().optional(),
-  }).strict()).default({}),
+  }).strict())),
 }).strict();
 
 // `model: ${SOURCERER_CODER_MODEL:-}` resolves to '' when unset, which means "not set".

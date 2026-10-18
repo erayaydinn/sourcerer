@@ -1,7 +1,4 @@
-# USD per 1M tokens. Names must match the `model` in factory.config.yaml exactly,
-# otherwise costSource is 'unknown'. Fill in real prices.
-models: {}
-#  <model>:
-#    input: 0
-#    output: 0
-#    cachedInput: 0
+# USD per 1M tokens. Names must match the resolved model (see `sourcerer validate`),
+# otherwise costSource is 'unknown'. Fill in prices from each provider's pricing page.
+models:
+#  <model>: { input: 0, output: 0, cachedInput: 0 }

@@ -12,14 +12,15 @@ import { attachRunLogger } from './run-logger.js';
 // `confirm(message)` resolves true to continue over budget. `run` is replaceable for tests.
 // `pause(message)` (optional, for --interactive) resolves 'continue' | 'skip' | 'abort'.
 // `sides` (optional, from --side) fixes which sides are worked on instead of the planner's choice.
-export async function runTask(task, { config, agents, pricing, bus, confirm, pause, sides, run = runAgent, now = new Date() }) {
+// `signal` (optional AbortSignal) stops the run: running agents and commands are killed, logs are kept.
+export async function runTask(task, { config, agents, pricing, bus, confirm, pause, sides, signal, run = runAgent, now = new Date() }) {
   const slug = taskSlug(task);
   const runId = `${stamp(now)}-${slug}`;
   const runDir = join(config.paths.runs, runId);
   mkdirSync(runDir, { recursive: true });
   attachRunLogger(bus, runDir);
 
-  const ctx = { runId, runDir, worktrees: {}, config, pricing, bus, run, confirm, pause, budget: createBudget(config.budget), gate: Promise.resolve(), stoppedBy: null, round: 0, lastComments: null, notes: {} };
+  const ctx = { runId, runDir, worktrees: {}, config, pricing, bus, run, confirm, pause, signal, budget: createBudget(config.budget), gate: Promise.resolve(), stoppedBy: null, round: 0, lastComments: null, notes: {} };
   let worktrees = {};
   let status = 'failed';
   let errorText;
@@ -35,13 +36,14 @@ export async function runTask(task, { config, agents, pricing, bus, confirm, pau
     writeFileSync(join(runDir, 'contract.txt'), plan.contract);
 
     plan.sides.forEach((side) => coderFor(agents, side));
-    worktrees = await createWorktrees(config, slug, plan.sides);
+    signal?.throwIfAborted();
+    worktrees = await createWorktrees(config, slug, plan.sides, { signal });
     ctx.worktrees = worktrees;
     emit(bus, 'worktrees.ready', { runId, worktrees });
     status = await reviewLoop(ctx, { task, plan, agents, worktrees, dir: taskDir(config, slug), runDir });
   } catch (error) {
-    status = error?.budgetStop ? 'stopped-budget' : error?.aborted ? 'aborted' : 'failed';
-    errorText = error instanceof Error ? error.message : String(error);
+    status = signal?.aborted || error?.aborted ? 'aborted' : error?.budgetStop ? 'stopped-budget' : 'failed';
+    errorText = signal?.aborted ? 'stopped by user' : error instanceof Error ? error.message : String(error);
   }
 
   const rounds = ctx.round;
@@ -60,6 +62,7 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
   let feedback = Object.fromEntries(plan.sides.map((side) => [side, null]));
 
   for (let round = 1; ; round++) {
+    ctx.signal?.throwIfAborted();
     ctx.round = round;
     await allOrThrow(Object.entries(feedback).map(([side, sideFeedback]) => {
       const coder = coderFor(agents, side);
@@ -70,7 +73,7 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
 
     const failing = {};
     for (const side of Object.keys(feedback).filter((side) => repos[side].test)) {
-      const result = await runTests(repos[side].test, worktrees[side]);
+      const result = await runTests(repos[side].test, worktrees[side], ctx.signal);
       const file = join(runDir, `${side}.r${round}.test.txt`);
       writeFileSync(file, result.output);
       tests[side] = { command: repos[side].test.run.join(' '), passed: result.passed };
@@ -126,9 +129,10 @@ function feedbackFor(sides, comments, round) {
   return Object.fromEntries(targets.map((side) => [side, { round, comments: [...comments[side], ...comments.general] }]));
 }
 
-async function runTests(test, cwd) {
+async function runTests(test, cwd, signal) {
   const [bin, ...args] = test.run;
-  const result = await execa(bin, args, { cwd, reject: false, all: true, timeout: test.timeoutSec * 1000 });
+  const result = await execa(bin, args, { cwd, reject: false, all: true, timeout: test.timeoutSec * 1000, cancelSignal: signal });
+  signal?.throwIfAborted();
   const output = result.timedOut ? `timed out after ${test.timeoutSec}s\n${result.all ?? ''}` : (result.all ?? '');
   return { passed: result.exitCode === 0 && !result.timedOut, output };
 }
@@ -147,13 +151,26 @@ async function callAgent(ctx, agent, prompt, workspace, round = 1) {
     const onLog = (line) => emit(ctx.bus, 'agent.log', { runId: ctx.runId, agent: agent.name, line });
     try {
       result = await ctx.run({ ...agent, profile: attempt.profile, model: attempt.model },
-        { prompt, ...workspace, sources: ragSources(agent, ctx), config: ctx.config, pricing: ctx.pricing, onLog });
+        { prompt, ...workspace, sources: ragSources(agent, ctx), config: ctx.config, pricing: ctx.pricing, onLog, signal: ctx.signal });
     } catch (error) {
       lastError = error;
+      if (ctx.signal?.aborted) {
+        emit(ctx.bus, 'agent.finished', {
+          ...base, status: 'failed', error: 'stopped by user', usage: null, costUsd: null, costSource: 'unknown', durationMs: Date.now() - started,
+        });
+        throw error; // no fallback attempt after a stop
+      }
+      // A failed call can still have cost money (the CLI reports it); count it.
+      const cost = error?.cost;
+      const next = attempts[index + 1];
+      const sameAccount = next && attempt.profile.type === 'cli' && next.profile.type === 'cli' && next.profile.bin === attempt.profile.bin;
+      if (error?.rateLimited && sameAccount) error.message += ` (fallback ${next.llm} skipped: same ${next.profile.bin} account)`;
       emit(ctx.bus, 'agent.finished', {
         ...base, status: 'failed', error: error instanceof Error ? error.message : String(error),
-        usage: null, costUsd: null, costSource: 'unknown', durationMs: Date.now() - started,
+        usage: cost?.usage ?? null, costUsd: cost?.costUsd ?? null, costSource: cost?.costSource ?? 'unknown', durationMs: Date.now() - started,
       });
+      if (typeof cost?.costUsd === 'number') await chargeBudget(ctx, agent.name, cost.costUsd);
+      if (error?.rateLimited && sameAccount) break;
       continue;
     }
     emit(ctx.bus, 'agent.finished', { ...base, status: 'ok', ...result });
