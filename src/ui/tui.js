@@ -5,7 +5,7 @@ import { createElement as h, useMemo, useRef, useState } from 'react';
 import { defaultWorkspace } from '../cli/root.js';
 import { COMMANDS, createSession } from './session.js';
 
-const MAX_LINES = 500;
+const MAX_LINES = 5000;
 const ICONS = { waiting: '·', running: '●', ok: '✓', failed: '✗' };
 const append = (list, text) => [...list, ...String(text).split('\n')].slice(-MAX_LINES);
 const AGENT_PANEL = 36;
@@ -57,6 +57,8 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
     setInputState(inputRef.current);
   };
   const [view, setView] = useState('events');
+  // Per view: the first shown line while scrolled up; no entry means follow the end.
+  const [scroll, setScroll] = useState({});
   const history = useRef(existsSync(historyPath) ? loadHistory(historyPath) : []);
   const cursor = useRef(null);
 
@@ -127,6 +129,24 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
     setView(views[(views.indexOf(view) + 1) % views.length]);
   };
 
+  const rows = stdout?.rows ?? 30;
+  const textWidth = Math.max(20, (stdout?.columns ?? 100) - AGENT_PANEL - 4); // borders + padding
+  const bodyHeight = Math.max(6, rows - 7 - (snap.question ? 1 : 0));
+  const source = view === 'events' ? lines : agentLogs[view] ?? ['(no output yet)'];
+  const wrapped = wrapLines(source, textWidth);
+  const page = bodyHeight - 3;
+  const lastTop = Math.max(0, wrapped.length - page);
+  const top = scroll[view] === undefined ? lastTop : Math.min(scroll[view], lastTop);
+  const shown = wrapped.slice(top, top + page);
+  const below = wrapped.length - Math.min(wrapped.length, top + page);
+
+  // Scrolling to the end (or past it) goes back to following new lines.
+  const scrollTo = (next) => setScroll((all) => {
+    const rest = { ...all };
+    delete rest[view];
+    return next >= lastTop ? rest : { ...rest, [view]: Math.max(0, next) };
+  });
+
   useInput((text, key) => {
     if (key.ctrl && text === 'c') {
       const result = session.interrupt();
@@ -138,6 +158,10 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
     if (key.upArrow) return browse(-1);
     if (key.downArrow) return browse(1);
     if (key.tab) return tab();
+    if (key.pageUp) return scrollTo(top - Math.ceil(page / 2));
+    if (key.pageDown) return scrollTo(top + Math.ceil(page / 2));
+    if (key.home) return scrollTo(0);
+    if (key.end) return scrollTo(lastTop);
     if (key.escape) return setInput('');
     if (key.backspace || key.delete) return setInput((value) => value.slice(0, -1));
     if (!text || key.ctrl || key.meta) return;
@@ -147,11 +171,6 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
     if (more.length) submit();
   });
 
-  const rows = stdout?.rows ?? 30;
-  const textWidth = Math.max(20, (stdout?.columns ?? 100) - AGENT_PANEL - 4); // borders + padding
-  const bodyHeight = Math.max(6, rows - 7 - (snap.question ? 1 : 0));
-  const source = view === 'events' ? lines : agentLogs[view] ?? ['(no output yet)'];
-  const shown = wrapLines(source, textWidth).slice(-(bodyHeight - 3));
   const status = snap.task ? `running "${snap.task}" · round ${runInfo.round}` : 'idle';
   const unknown = runInfo.unknown ? ` (${runInfo.unknown} unknown)` : '';
   const overrides = snap.overrides.length ? ` · llm: ${snap.overrides.join(', ')}` : '';
@@ -165,11 +184,13 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
           `${ICONS[a.status] ?? '?'} ${name.padEnd(15)} ${a.round === undefined ? '  ' : `r${a.round}`} ${a.costUsd ? `$${a.costUsd.toFixed(2)}` : ''}`)),
         Object.keys(agents).length ? null : h(Text, { dimColor: true }, '(no task yet)')),
       h(Box, { flexDirection: 'column', borderStyle: 'single', flexGrow: 1, paddingX: 1 },
-        h(Text, { dimColor: true }, view === 'events' ? 'events' : `${view} (live)`),
+        h(Text, { dimColor: true }, scroll[view] === undefined
+          ? (view === 'events' ? 'events' : `${view} (live)`)
+          : `${view} · ${below} newer line(s) below · End: live`),
         ...shown.map((line, i) => h(Text, { key: i }, line || ' ')))),
     snap.question ? h(Text, { color: 'yellow', wrap: 'wrap' }, ` ${snap.question} (${snap.hint})`) : null,
     h(Box, { borderStyle: 'round', paddingX: 1 }, h(Text, null, `> ${input}`), h(Text, { inverse: true }, ' ')),
-    h(Text, { dimColor: true }, ' Enter run · ↑↓ history · Tab next view / complete /command · Esc clear · /help · Ctrl+C stop, twice exit'));
+    h(Text, { dimColor: true }, ' Enter run · ↑↓ history · Tab next view / complete /command · PgUp/PgDn scroll · Esc clear · /help · Ctrl+C stop, twice exit'));
 }
 
 export async function startTui({ rootFlag, run } = {}) {

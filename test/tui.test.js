@@ -10,7 +10,7 @@ import { createElement as h } from 'react';
 import { App, wrapLines } from '../src/ui/tui.js';
 
 const temp = (name) => mkdtempSync(join(tmpdir(), `sourcerer-${name}-`));
-const KEYS = { enter: '\r', tab: '\t', up: '\u001B[A', ctrlC: '\u0003' };
+const KEYS = { enter: '\r', tab: '\t', up: '\u001B[A', ctrlC: '\u0003', pageUp: '\u001B[5~', pageDown: '\u001B[6~', home: '\u001B[H', end: '\u001B[F' };
 
 async function gitRepo() {
   const dir = temp('repo');
@@ -152,5 +152,32 @@ test('TUI: a long event line is shown in full, wrapped across rows', async () =>
   await until(app, /no run matches|no runs yet/);
   const frame = app.lastFrame().replace(/[│\s]/g, '');
   assert.ok(frame.includes(`>${long.replace(/\s/g, '')}`), 'the whole echoed line is visible');
+  app.unmount();
+});
+
+test('TUI: PgUp/PgDn/Home/End scroll the panel; new lines do not move it; End follows again', async () => {
+  const app = render(h(App, { rootFlag: await workspace(), run: fakeRun(Promise.resolve()), history: join(temp('hist'), 'history') }));
+  await until(app, /sourcerer · idle/);
+  for (let i = 1; i <= 40; i++) await type(app, `/no-such-${i}`);
+  await until(app, /unknown command \/no-such-40/);
+
+  app.stdin.write(KEYS.home);
+  await until(app, /newer line\(s\) below · End: live/);
+  assert.match(app.lastFrame(), /sourcerer: type a task, or \/help/, 'the first line is shown');
+  const atTop = app.lastFrame();
+  await type(app, '/no-such-41');
+  await sleep(50);
+  assert.match(app.lastFrame(), /sourcerer: type a task/, 'still at the top after new lines');
+  assert.notEqual(app.lastFrame(), atTop, 'the count of newer lines went up');
+
+  app.stdin.write(KEYS.pageDown);
+  await sleep(50);
+  assert.doesNotMatch(app.lastFrame(), /sourcerer: type a task/);
+  app.stdin.write(KEYS.pageUp);
+  await until(app, /sourcerer: type a task/);
+
+  app.stdin.write(KEYS.end);
+  await until(app, /unknown command \/no-such-41/);
+  assert.doesNotMatch(app.lastFrame(), /End: live/);
   app.unmount();
 });

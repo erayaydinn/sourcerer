@@ -614,3 +614,16 @@ Limits:
 - An explicit base in sourcerer.yaml still wins. doctor shows the base it uses.
 - Tests: 159 (master-only repo, a clone whose origin default is develop, remote-only branch, explicit override).
 
+## TUI scrolling (done)
+
+- The right panel (events or an agent's output) scrolls:
+  - PgUp/PgDn move half a page.
+  - Home goes to the first line; End goes back to the end and follows new lines again.
+  - ↑↓ stay for input history.
+- Each view keeps its own position (state `scroll`: first shown line per view; no entry means follow the end). While scrolled up, new lines don't move the view. The header shows how many newer lines are below.
+- Kept lines per view: 500 -> 5000.
+- Not done:
+  - Mouse wheel (needs mouse reporting, which breaks normal text selection).
+  - Once a view is past 5000 lines, the oldest lines are dropped, so a scrolled-up view shifts by the lines dropped.
+- Tests: 160.
+
