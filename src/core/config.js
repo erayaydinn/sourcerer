@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,6 +101,23 @@ function setPath(target, path, value) {
 
 // allowMissingRepos: for commands that only look at profiles/agents (models, use, agents) before
 // repo paths are set; missing paths then point at the workspace itself.
+// The repo's main branch: origin's default (origin/HEAD), else a local main or master, else the current branch.
+// Undefined when the folder is not a git repo (doctor reports that).
+export function defaultBranch(path) {
+  const git = (...args) => {
+    try {
+      return execFileSync('git', ['-C', path, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+      return '';
+    }
+  };
+  const remote = git('symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '');
+  const local = (name) => name && git('rev-parse', '--verify', '--quiet', `refs/heads/${name}`) !== '';
+  if (local(remote)) return remote;
+  if (remote) return `origin/${remote}`;
+  return ['main', 'master'].find(local) ?? (git('symbolic-ref', '--quiet', '--short', 'HEAD') || undefined);
+}
+
 export function loadConfig(rootDir, { allowMissingRepos = false } = {}) {
   loadEnv(rootDir);
   if (isLegacyWorkspace(rootDir)) {
@@ -116,7 +134,10 @@ export function loadConfig(rootDir, { allowMissingRepos = false } = {}) {
   const result = factoryConfig.safeParse(merged);
   if (!result.success) throw new Error(`config (package defaults + ${join(rootDir, WORKSPACE_FILE)}):\n${z.prettifyError(result.error)}`);
   const config = result.data;
-  for (const repo of Object.values(config.repos)) repo.path = resolve(rootDir, repo.path);
+  for (const repo of Object.values(config.repos)) {
+    repo.path = resolve(rootDir, repo.path);
+    repo.base ??= defaultBranch(repo.path);
+  }
   for (const key of ['runs', 'worktrees']) config.paths[key] = resolve(rootDir, config.paths[key]);
   return config;
 }

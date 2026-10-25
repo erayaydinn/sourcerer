@@ -141,7 +141,7 @@ test('doctor: OK/WARN/FAIL lines, key values never printed, exit code', async ()
   const out = lines.join('\n');
   assert.doesNotMatch(out, /sk-secret/);
   assert.match(out, /OK {4}gpt-api: OPENAI_API_KEY set/);
-  assert.match(out, /frontend repo .* \(dirty: 1 changes\)/);
+  assert.match(out, /frontend repo .* \(base main, dirty: 1 changes\)/);
   assert.match(out, /WARN {2}codex \(codex-main\) not found/);
   assert.match(out, /WARN {2}\.gitignore does not cover \.env/);
   assert.match(out, /NOTE {2}login state can't be checked/);

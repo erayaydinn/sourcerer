@@ -60,7 +60,7 @@ export async function runChecks(rootFlag) {
       continue;
     }
     const dirty = (await execa('git', ['-C', repo.path, 'status', '--porcelain'])).stdout.split('\n').filter(Boolean).length;
-    checks.push(ok(`${side} repo ${repo.path} (${dirty ? `dirty: ${dirty} changes` : 'clean'})`));
+    checks.push(ok(`${side} repo ${repo.path} (base ${repo.base}, ${dirty ? `dirty: ${dirty} changes` : 'clean'})`));
   }
 
   // Profiles used by an agent (llm or fallback) must work; unused ones only warn.

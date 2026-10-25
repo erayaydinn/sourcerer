@@ -146,7 +146,7 @@ test('migrate keeps only differences, keeps changed agents as overrides, backs u
   writeFileSync(join(root, '.env'), `SOURCERER_FRONTEND=${root}\nSOURCERER_BACKEND=${root}\n`);
   const config = readFileSync(join(root, 'config', 'factory.config.yaml'), 'utf8')
     .replace('  maxCostPerRun: 5', '  maxCostPerRun: ${SOURCERER_MAX_COST_PER_RUN:-3}')
-    .replace('  frontend:\n    base: main', '  frontend:\n    path: ${SOURCERER_FRONTEND}\n    base: main\n    test: { run: [pnpm, run, build], timeoutSec: 300 }')
+    .replace('  frontend:\n', '  frontend:\n    path: ${SOURCERER_FRONTEND}\n    test: { run: [pnpm, run, build], timeoutSec: 300 }\n')
     .replace('    model: grok-4.7-medium', '    model: grok-4.7-high');
   writeFileSync(join(root, 'config', 'factory.config.yaml'), config);
   writeFileSync(join(root, 'config', 'pricing.yaml'), 'models:\n  grok-4.7-high: { input: 1, output: 2 }\n');

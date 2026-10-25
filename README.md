@@ -103,7 +103,7 @@ sourcerer use coder cursor-fast --fallback cursor-main     # a separate profile 
 - `sourcerer smoke <profile>` tries the profile's own model, not one given with `use --model`. To try another model, make it a profile.
 - Which models are available, and whether one can be selected explicitly with `--model`, depends on your plan with that CLI. Check with `smoke` before a long run.
 
-**`sourcerer.yaml` sections**: `llms` (profiles, replaced by name), `agents` (`<name>: { llm, model, fallbackLlm }`), `repos` (`<side>: { base, setup, test, docs, path }`), `budget`, `review`, `tools`, `paths`, `pricing` (`<model>: { input, output, cachedInput }`, USD per 1M tokens; needed for CLIs that don't report cost). To change a prompt, put a full agent file in `<workspace>/agents/<name>.yaml`: it replaces the package's agent of that name (or adds a new agent).
+**`sourcerer.yaml` sections**: `llms` (profiles, replaced by name), `agents` (`<name>: { llm, model, fallbackLlm }`), `repos` (`<side>: { base, setup, test, docs, path }`; `base` defaults to the repo's main branch: origin's default branch, else `main` or `master`), `budget`, `review`, `tools`, `paths`, `pricing` (`<model>: { input, output, cachedInput }`, USD per 1M tokens; needed for CLIs that don't report cost). To change a prompt, put a full agent file in `<workspace>/agents/<name>.yaml`: it replaces the package's agent of that name (or adds a new agent).
 
 **Environment variables** (see `.env.example`):
 

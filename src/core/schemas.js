@@ -39,7 +39,7 @@ const command = z.object({ run: z.array(z.string()).min(1), timeoutSec: z.number
 
 const repo = z.object({
   path: z.string(),
-  base: z.string(),
+  base: z.string().optional(), // detected from the repo when unset (see defaultBranch)
   setup: command.optional(),
   test: command.optional(),
   docs: z.array(z.string()).default([]),

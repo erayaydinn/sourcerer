@@ -603,3 +603,14 @@ Limits:
 - Tests: 157.
 - Deferred: coders asking mid-run. `claude -p` can't wait for input, so this would need ending the call and `--resume`, with sessions kept. For now, coders report open decisions in their notes.
 
+## Base branch from the repo (done)
+
+- `repos.<side>.base` is optional and no longer defaults to `main` in the package config.
+- When unset, loadConfig detects it (defaultBranch in src/core/config.js):
+  - origin/HEAD's branch: the local branch if it exists, else `origin/<name>`;
+  - otherwise a local `main` or `master`;
+  - otherwise the current branch.
+  - It is undefined when the folder isn't a git repo, which doctor already reports.
+- An explicit base in sourcerer.yaml still wins. doctor shows the base it uses.
+- Tests: 159 (master-only repo, a clone whose origin default is develop, remote-only branch, explicit override).
+

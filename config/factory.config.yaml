@@ -3,14 +3,13 @@
 # Precedence: --llm > .env / shell variables > sourcerer.yaml > these defaults.
 
 # Repo paths come from SOURCERER_FRONTEND / SOURCERER_BACKEND (.env) or repos.<side>.path in sourcerer.yaml.
-# base: branch new worktrees start from. setup (optional): runs once in each new worktree.
+# base (optional): branch new worktrees start from; when unset, the repo's main branch
+# (origin's default branch, else main or master). setup (optional): runs once in each new worktree.
 # test (optional): run by the orchestrator after every coder pass. docs: paths searched by search_docs.
 repos:
   frontend:
-    base: main
     docs: [docs, adr, README.md]
   backend:
-    base: main
     docs: [docs, adr, README.md]
 
 # Relative to the workspace.
