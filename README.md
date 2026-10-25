@@ -61,6 +61,8 @@ sourcerer worktree remove <slug> [--force]                 # after you have comm
 
 Run ids accept a unique prefix and default to the latest run.
 
+When a task is unclear in a way that would change the plan, the planner may ask up to 5 questions before planning. You answer them one by one, and Enter skips a question. Questions are asked in the terminal UI and the plain session, and by `sourcerer run` when it runs in a terminal. Without a terminal (scripts, CI), the planner states its assumptions instead. Questions and answers are saved to `runs/<id>/questions.json`. Answering costs one extra planner call.
+
 ## Configuration
 
 Prompts, tools, default LLM profiles and limits ship with the package, so updates reach you. Your workspace (`~/.config/sourcerer` by default) holds only your choices:

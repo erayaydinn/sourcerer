@@ -160,3 +160,25 @@ test('/use saves a per-agent choice, /agents shows it, /models lists profiles', 
   r.send('/exit');
   await r.closed;
 });
+
+test('REPL: planner questions are answered line by line (empty skips one)', async () => {
+  const root = await workspace();
+  const prompts = [];
+  const base = fakeRun();
+  const run = async (agent, opts) => {
+    if (agent.role !== 'planner') return base(agent, opts);
+    prompts.push(opts.prompt);
+    return prompts.length === 1 ? result(block({ questions: ['Which field?', 'Rate limit?'] })) : base(agent, opts);
+  };
+  const r = repl(root, run);
+  r.send('Login');
+  await r.waitFor(/1\/2\. Which field\?/);
+  r.send('yes, email');
+  await r.waitFor(/2\/2\. Rate limit\?/);
+  r.send('');
+  await r.waitFor(/approved/);
+  assert.match(prompts[1], /A: yes, email/);
+  assert.match(prompts[1], /Q: Rate limit\?\nA: \(no answer/);
+  r.send('/exit');
+  await r.closed;
+});

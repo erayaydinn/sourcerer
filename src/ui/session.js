@@ -31,7 +31,7 @@ export const COMMANDS = ['status', 'cost', 'logs', 'models', 'agents', 'use', 'l
 // `run` (fake agent runner) is only passed by tests.
 export function createSession({ rootFlag, print, hooks = {}, run }) {
   const state = { task: null, controller: null, question: null, overrides: [], lastInterrupt: 0 };
-  const snapshot = () => ({ task: state.task, question: state.question?.message ?? null, overrides: [...state.overrides] });
+  const snapshot = () => ({ task: state.task, question: state.question?.message ?? null, hint: state.question?.hint ?? null, overrides: [...state.overrides] });
   const changed = () => hooks.change?.(snapshot());
 
   const root = () => {
@@ -54,14 +54,28 @@ export function createSession({ rootFlag, print, hooks = {}, run }) {
 
   // Budget pause: resolved by y/n, /approve, /reject, or false on /stop.
   const confirm = (message) => new Promise((resolve) => {
-    state.question = { message, resolve };
+    state.question = { message, hint: 'y/n, /approve, /reject, /stop', resolve };
     print(`${message} (y/n)  [/approve, /reject, /stop]`); // message already ends with "Continue?"
     changed();
   });
-  const answer = (yes) => {
+  // Planner questions: each line typed is the answer to the current one (empty skips it; '' on /stop).
+  const ask = async (questions) => {
+    print(`the planner has ${questions.length} question(s); type an answer, Enter to skip:`);
+    const answers = [];
+    for (const [i, question] of questions.entries()) {
+      if (state.controller?.signal.aborted) break;
+      answers.push(await new Promise((resolve) => {
+        state.question = { message: `${i + 1}/${questions.length}. ${question}`, hint: 'type an answer, Enter to skip, /stop', free: true, resolve };
+        print(state.question.message);
+        changed();
+      }));
+    }
+    return answers;
+  };
+  const answer = (value) => {
     const { resolve } = state.question;
     state.question = null;
-    resolve(yes);
+    resolve(value);
     changed();
   };
 
@@ -69,7 +83,7 @@ export function createSession({ rootFlag, print, hooks = {}, run }) {
     if (!state.task) return print('no task is running');
     print('stopping... (running agents are killed, logs are kept)');
     state.controller.abort();
-    if (state.question) answer(false);
+    if (state.question) answer(state.question.free ? '' : false);
   };
 
   const startTask = (task) => {
@@ -88,7 +102,7 @@ export function createSession({ rootFlag, print, hooks = {}, run }) {
     const bus = createBus();
     hooks.task?.({ task, agents: project.defs.map((def) => def.name), bus });
     changed();
-    return executeTask(task, { root: dir, project, confirm, signal: state.controller.signal, bus, run }, print)
+    return executeTask(task, { root: dir, project, confirm, ask, signal: state.controller.signal, bus, run }, print)
       .catch((error) => print(`error: ${error.message}`))
       .finally(() => {
         state.task = null;
@@ -137,8 +151,8 @@ export function createSession({ rootFlag, print, hooks = {}, run }) {
         print(`overrides for this session: ${next.join(', ')}`);
       });
     },
-    approve: () => (state.question ? answer(true) : print('nothing to approve')),
-    reject: () => (state.question ? answer(false) : print('nothing to reject')),
+    approve: () => (state.question && !state.question.free ? answer(true) : print('nothing to approve')),
+    reject: () => (state.question && !state.question.free ? answer(false) : print('nothing to reject')),
     stop,
     doctor: () => doctorCommand({ root: rootFlag }, print),
     exit: () => (state.task ? print('a task is running: /stop it first (or Ctrl+C twice)') : 'exit'),
@@ -147,6 +161,7 @@ export function createSession({ rootFlag, print, hooks = {}, run }) {
   // One line of input. Returns 'exit' when the session should end.
   async function handle(line) {
     const text = line.trim();
+    if (state.question?.free && !text.startsWith('/')) return answer(text);
     if (state.question && /^(y|yes|n|no)$/i.test(text)) return answer(/^y/i.test(text));
     if (text.startsWith('/')) {
       const [name, ...args] = text.slice(1).split(/\s+/);

@@ -479,3 +479,39 @@ test('contextFor adds repo context to the first coder pass only and saves it in 
   assert.doesNotMatch(prompts['coder-backend'][1], /Likely relevant files/, 'not repeated in fix rounds');
   assert.match(readFileSync(join(out.runDir, 'backend.context.txt'), 'utf8'), /### src\/x\.js/);
 });
+
+test('planner questions: the user answers, the planner plans with the answers and may not ask again', async () => {
+  const { config, agents } = await setup();
+  const prompts = [];
+  const run = fakeRun(['backend'], {
+    planner: async (agent, opts) => {
+      prompts.push(opts.prompt);
+      return result(prompts.length === 1 ? json({ questions: ['Email or username?', 'Remember me?'] }) : plan(['backend']));
+    },
+  });
+  let asked;
+  const ask = async (questions) => { asked = questions; return ['email', '']; };
+  const out = await runTask('Login', { config, agents, pricing: {}, bus: createBus(), confirm: deny, ask, run });
+  assert.equal(out.status, 'approved');
+  assert.deepEqual(asked, ['Email or username?', 'Remember me?']);
+  assert.match(prompts[0], /you may ask the user/);
+  assert.match(prompts[1], /Q: Email or username\?\nA: email/);
+  assert.match(prompts[1], /Q: Remember me\?\nA: \(no answer: use your judgment\)/);
+  assert.match(prompts[1], /Do not ask more questions/);
+  assert.deepEqual(JSON.parse(readFileSync(join(out.runDir, 'questions.json'), 'utf8'))[0], { question: 'Email or username?', answer: 'email' });
+});
+
+test('planner questions: with no one to answer, the planner is told to assume and questions are rejected', async () => {
+  const { config, agents } = await setup();
+  let prompt = '';
+  const run = fakeRun(['backend'], {
+    planner: async (agent, opts) => {
+      prompt = opts.prompt;
+      return result(json({ questions: ['Which page?'] }));
+    },
+  });
+  const out = await runTask('Login', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
+  assert.match(prompt, /No one can answer questions now/);
+  assert.doesNotMatch(prompt, /you may ask the user/);
+  assert.equal(out.status, 'failed');
+});

@@ -6,6 +6,13 @@ export const planSchema = z.object({
   instructions: z.object({ frontend: z.string().optional(), backend: z.string().optional() }),
 }).refine((plan) => plan.sides.every((side) => plan.instructions[side]), 'every side needs instructions');
 
+export const MAX_QUESTIONS = 5;
+// What the planner may answer when it can ask: questions for the user, or the plan.
+export const plannerReplySchema = z.union([
+  z.object({ questions: z.array(z.string().min(1)).min(1).max(MAX_QUESTIONS) }),
+  planSchema,
+]);
+
 export const reviewSchema = z.object({
   verdict: z.enum(['approve', 'request-changes']),
   comments: z.object({
@@ -16,7 +23,8 @@ export const reviewSchema = z.object({
 });
 
 // sides (optional, from --side): the work is limited to these sides; the planner must not pick others.
-export function plannerPrompt(task, repos, sides) {
+// canAsk: the user is there to answer questions. answers: [{ question, answer }] from an earlier reply.
+export function plannerPrompt(task, repos, sides, { canAsk = false, answers } = {}) {
   const decide = sides
     ? `The work is limited to: ${sides.join(', ')}. Set "sides" to exactly ${JSON.stringify(sides)} and plan no work for other sides.`
     : 'Decide which sides need changes. Pick only one side if the change touches only one side.';
@@ -31,6 +39,22 @@ ${decide}
 End your answer with exactly one fenced json block in this shape:
 \`\`\`json
 { "sides": ["frontend", "backend"], "contract": "<contract text>", "instructions": { "frontend": "...", "backend": "..." } }
+\`\`\`
+${questionRule(canAsk, answers)}`;
+}
+
+function questionRule(canAsk, answers) {
+  if (answers) {
+    const pairs = answers.map(({ question, answer }) => `Q: ${question}\nA: ${answer || '(no answer: use your judgment)'}`).join('\n\n');
+    return `\nThe user answered your questions:\n\n${pairs}\n\nDo not ask more questions. Write the plan; state any remaining assumptions in the instructions.`;
+  }
+  if (!canAsk) return '\nNo one can answer questions now. If something is unclear, choose the most reasonable option and state the assumption in the instructions.';
+  return `
+If the task is unclear in a way that would change the plan, you may ask the user instead of planning.
+Ask only questions whose answer changes the plan (scope, behaviour, data shape); never ask what you can find in the repos
+or what has an obvious default. At most ${MAX_QUESTIONS} short questions. Then end with exactly one fenced json block in this shape instead:
+\`\`\`json
+{ "questions": ["..."] }
 \`\`\``;
 }
 

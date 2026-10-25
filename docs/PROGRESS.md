@@ -585,3 +585,21 @@ Limits:
 - CLI logins must stay readable.
 - macOS only; Linux (bubblewrap/Landlock) is not done.
 - sandbox-exec is deprecated by Apple but still works.
+
+## Agent CLIs leaving processes behind (done)
+
+- A dev server or watcher started by an agent kept the CLI's stdout open, so runCli waited until the timeout after the work was done.
+- runCli now kills the CLI's process group as soon as the CLI itself exits. Regression test in test/cli-stream.test.js (a fake claude that leaves `sleep` running).
+- Tests and setup commands (configured by the user) still wait for their own stdout; not changed.
+
+## Planner questions (done)
+
+- The planner may answer with `{ "questions": [...] }` (1 to 5) instead of a plan, when it is told someone can answer. The prompt says: ask only if the answer changes the plan; never ask what the repos show or what has an obvious default.
+- runTask takes an optional `ask(questions)` hook. Answers ('' = skipped, shown to the planner as "use your judgment") go into a second planner call, which may not ask again. Both calls count toward the budget. Saved, redacted, to runs/<id>/questions.json.
+- Without `ask`, the prompt says no one can answer: the planner states its assumptions, and a questions reply fails the run.
+- Wired in:
+  - `sourcerer run`, only when stdin is a TTY.
+  - The session (REPL and TUI): each line answers the current question, Enter skips it, and /stop ends the run. /approve and /reject apply only to budget questions. The TUI banner shows a per-question hint.
+- Tests: 157.
+- Deferred: coders asking mid-run. `claude -p` can't wait for input, so this would need ending the call and `--resume`, with sessions kept. For now, coders report open decisions in their notes.
+

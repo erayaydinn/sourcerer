@@ -49,7 +49,7 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
   const [agents, setAgents] = useState({});
   const [agentLogs, setAgentLogs] = useState({});
   const [runInfo, setRunInfo] = useState({ round: 0, totalUsd: 0, totalTokens: 0, unknown: 0 });
-  const [snap, setSnap] = useState({ task: null, question: null, overrides: [] });
+  const [snap, setSnap] = useState({ task: null, question: null, hint: null, overrides: [] });
   const [input, setInputState] = useState('');
   const inputRef = useRef('');
   const setInput = (value) => {
@@ -96,7 +96,7 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
     const text = inputRef.current.trim();
     setInput('');
     cursor.current = null;
-    if (!text) return;
+    if (!text) return snap.question ? session.handle('') : undefined; // Enter skips a planner question
     if (history.current.at(-1) !== text) history.current.push(text);
     print(`> ${text}`);
     session.handle(text).then((result) => {
@@ -167,7 +167,7 @@ export function App({ rootFlag, run, history: historyPath = historyFile(), onExi
       h(Box, { flexDirection: 'column', borderStyle: 'single', flexGrow: 1, paddingX: 1 },
         h(Text, { dimColor: true }, view === 'events' ? 'events' : `${view} (live)`),
         ...shown.map((line, i) => h(Text, { key: i }, line || ' ')))),
-    snap.question ? h(Text, { color: 'yellow', wrap: 'wrap' }, ` ${snap.question} (y/n, /approve, /reject, /stop)`) : null,
+    snap.question ? h(Text, { color: 'yellow', wrap: 'wrap' }, ` ${snap.question} (${snap.hint})`) : null,
     h(Box, { borderStyle: 'round', paddingX: 1 }, h(Text, null, `> ${input}`), h(Text, { inverse: true }, ' ')),
     h(Text, { dimColor: true }, ' Enter run · ↑↓ history · Tab next view / complete /command · Esc clear · /help · Ctrl+C stop, twice exit'));
 }

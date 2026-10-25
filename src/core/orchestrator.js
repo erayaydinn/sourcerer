@@ -5,7 +5,7 @@ import { runAgent } from '../adapters/index.js';
 import { createWorktrees, diffWorktree, ignoredFiles, taskDir, taskSlug, workspaceFor } from '../git/worktree.js';
 import { addCost, createBudget, overBudget } from './cost.js';
 import { emit } from './events.js';
-import { coderPrompt, parseJsonBlock, planSchema, plannerPrompt, reviewSchema, reviewerPrompt } from './prompts.js';
+import { coderPrompt, parseJsonBlock, planSchema, plannerPrompt, plannerReplySchema, reviewSchema, reviewerPrompt } from './prompts.js';
 import { attachRunLogger } from './run-logger.js';
 import { gitDirOf, sandboxed } from './sandbox.js';
 import { redact } from './security.js';
@@ -13,10 +13,11 @@ import { redact } from './security.js';
 // task -> planner -> contract -> worktrees -> review loop (coders in parallel -> tests -> diffs -> reviewer).
 // `confirm(message)` resolves true to continue over budget. `run` is replaceable for tests.
 // `pause(message)` (optional, for --interactive) resolves 'continue' | 'skip' | 'abort'.
+// `ask(questions)` (optional, when someone can answer) resolves one answer per planner question ('' = none).
 // `sides` (optional, from --side) fixes which sides are worked on instead of the planner's choice.
 // `signal` (optional AbortSignal) stops the run: running agents and commands are killed, logs are kept.
 // `contextFor({ side, task, plan, worktree })` (optional) returns extra coder context, e.g. from a repo search.
-export async function runTask(task, { config, agents, pricing, bus, confirm, pause, sides, signal, contextFor, run = runAgent, now = new Date() }) {
+export async function runTask(task, { config, agents, pricing, bus, confirm, pause, ask, sides, signal, contextFor, run = runAgent, now = new Date() }) {
   const slug = taskSlug(task);
   const runId = `${stamp(now)}-${slug}`;
   const runDir = join(config.paths.runs, runId);
@@ -34,8 +35,17 @@ export async function runTask(task, { config, agents, pricing, bus, confirm, pau
     const planner = byRole(agents, 'planner');
     const repos = config.repos;
     const planWorkspace = { cwd: runDir, readDirs: [repos.frontend.path, repos.backend.path] };
-    const answer = await callAgent(ctx, planner, plannerPrompt(task, repos, sides), planWorkspace, 0);
-    const plan = withSides(parseJsonBlock(answer, planSchema, 'planner'), sides);
+    const planOnce = async (options, schema) => parseJsonBlock(
+      await callAgent(ctx, planner, plannerPrompt(task, repos, sides, options), planWorkspace, 0), schema, 'planner');
+    let reply = await planOnce({ canAsk: Boolean(ask) }, ask ? plannerReplySchema : planSchema);
+    if (reply.questions) {
+      const given = await ask(reply.questions);
+      signal?.throwIfAborted();
+      const answers = reply.questions.map((question, i) => ({ question, answer: (given[i] ?? '').trim() }));
+      writeFileSync(join(runDir, 'questions.json'), `${redact(JSON.stringify(answers, null, 2))}\n`);
+      reply = await planOnce({ answers }, planSchema);
+    }
+    const plan = withSides(reply, sides);
     writeFileSync(join(runDir, 'contract.txt'), redact(plan.contract));
 
     plan.sides.forEach((side) => coderFor(agents, side));

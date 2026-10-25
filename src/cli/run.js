@@ -14,7 +14,7 @@ const CLI = fileURLToPath(new URL('./index.js', import.meta.url));
 
 // Loads the project (unless given, already checked), wires live printing and runs one task.
 // Shared by `sourcerer run` and the session. Returns null if the config has errors (already printed).
-export async function executeTask(task, { root, llm = [], project: loaded, sides, confirm, pause, signal, bus = createBus(), run }, print) {
+export async function executeTask(task, { root, llm = [], project: loaded, sides, confirm, pause, ask, signal, bus = createBus(), run }, print) {
   const project = loaded ?? loadProject(root, llm);
   if (!loaded && !reportProblems(project, print)) return null;
   const { config, defs } = project;
@@ -23,7 +23,7 @@ export async function executeTask(task, { root, llm = [], project: loaded, sides
     config,
     agents: defs.map((def) => createAgent(def, config)),
     pricing: config.pricing,
-    bus, confirm, pause, sides, signal, run,
+    bus, confirm, pause, ask, sides, signal, run,
     contextFor: config.rag.enabled ? (input) => repoContext(config, root, input, print) : undefined,
   });
   printResult(result, print);
@@ -55,11 +55,11 @@ export async function runCommand(task, { root, tmux, interactive, llm, side }, p
     controller.abort();
   };
   process.on('SIGINT', onInterrupt);
-  const ask = async (question) => {
+  const prompt = async (question) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     rl.on('SIGINT', onInterrupt);
     try {
-      return (await rl.question(question, { signal: controller.signal })).trim().toLowerCase();
+      return (await rl.question(question, { signal: controller.signal })).trim();
     } catch {
       return '';
     } finally {
@@ -78,12 +78,14 @@ export async function runCommand(task, { root, tmux, interactive, llm, side }, p
   try {
     const result = await executeTask(task, {
       root, llm, sides, bus, signal: controller.signal,
-      confirm: async (message) => (await ask(`${message} [y/N] `)) === 'y',
+      confirm: async (message) => (await prompt(`${message} [y/N] `)).toLowerCase() === 'y',
       // --interactive pause points. Empty answer means continue.
       pause: interactive ? async (message) => {
-        const answer = await ask(`${message} [C]ontinue / [s]kip / [a]bort `);
+        const answer = (await prompt(`${message} [C]ontinue / [s]kip / [a]bort `)).toLowerCase();
         return answer.startsWith('a') ? 'abort' : answer.startsWith('s') ? 'skip' : 'continue';
       } : undefined,
+      // Planner questions, only when someone is at the terminal. Empty answer leaves it to the planner.
+      ask: process.stdin.isTTY ? (questions) => askEach(questions, prompt, print) : undefined,
     }, print);
     if (!result) return 1;
     if (inPanes) {
@@ -94,6 +96,13 @@ export async function runCommand(task, { root, tmux, interactive, llm, side }, p
   } finally {
     process.off('SIGINT', onInterrupt);
   }
+}
+
+async function askEach(questions, prompt, print) {
+  print(`\nThe planner has ${questions.length} question(s) (Enter to skip one):`);
+  const answers = [];
+  for (const [i, question] of questions.entries()) answers.push(await prompt(`${i + 1}. ${question}\n> `));
+  return answers;
 }
 
 function openPanesOn(bus, defs, interactive, print) {
