@@ -68,3 +68,20 @@ test('a CLI that exits non-zero gives a short error (not its stdout) with the re
     process.env.PATH = saved;
   }
 });
+
+test('runCli returns when the CLI exits, even if it left a background process holding stdout', async () => {
+  const leftBin = mkdtempSync(join(tmpdir(), 'sourcerer-left-'));
+  const result = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'done', total_cost_usd: 0.01, usage: {} });
+  writeFileSync(join(leftBin, 'claude'), `#!/bin/sh\ncat > /dev/null\necho '${result}'\nsleep 30 &\nexit 0\n`);
+  chmodSync(join(leftBin, 'claude'), 0o755);
+  const saved = process.env.PATH;
+  process.env.PATH = `${leftBin}:${saved}`;
+  try {
+    const started = Date.now();
+    const out = await runCli({ bin: 'claude' }, { prompt: 'x', cwd: leftBin, readDirs: [], model: 'm', allowedTools: [], timeoutSec: 20, pricing: {} });
+    assert.equal(out.output, 'done');
+    assert.ok(Date.now() - started < 5000, 'did not wait for the background process');
+  } finally {
+    process.env.PATH = saved;
+  }
+});

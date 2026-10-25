@@ -23,6 +23,9 @@ export async function runCli(profile, { prompt, system, cwd, readDirs, model, al
   const subprocess = execa(bin, binArgs, { cwd, input, timeout: timeoutSec * 1000, detached: true });
   const stop = () => killGroup(subprocess.pid);
   signal?.addEventListener('abort', stop, { once: true });
+  // Once the CLI itself exits, its work is done: stop what it left running (a dev server or a watcher keeps
+  // stdout open, and the run would wait for it until the timeout).
+  subprocess.once('exit', stop);
   if (onLog && recipe.logLine) streamLines(subprocess.stdout, (line) => {
     const text = safeLogLine(recipe, line);
     if (text) onLog(text);
