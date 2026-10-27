@@ -71,7 +71,7 @@ Your part (${side}):
 ${plan.instructions[side]}
 
 Work only in ${workspace.cwd}.${readOnly}
-Write and run your own tests and fix failures. Do not commit or push.${context ? `\n\n${context}` : ''}${feedback ? fixSection(feedback) : ''}`;
+Run only the tests that cover your change and fix failures. Do not commit or push.${context ? `\n\n${context}` : ''}${feedback ? fixSection(feedback) : ''}`;
 }
 
 function fixSection({ round, comments, testOutput }) {

@@ -627,3 +627,20 @@ Limits:
   - Once a view is past 5000 lines, the oldest lines are dropped, so a scrolled-up view shifts by the lines dropped.
 - Tests: 160.
 
+## Coder prompts: scoped verification (done)
+
+- Feedback from a run on a large work repo: a small task took about 1.4M tokens on the coder and ran long, where Cursor used about 100k for the same task. The run's logs were not available here.
+- An older local run showed the pattern: 12 of 17 tool calls were checks.
+  - Whole-repo lint and build.
+  - A throwaway test harness in /tmp.
+  - A dev server probed with curl.
+- Coder system prompts (agents/coder-*.yaml) and coderPrompt now say:
+  - Make the smallest change; read only the files needed, starting from the search results and the contract.
+  - Add or update tests for the new behaviour and run just those.
+  - No whole-repo test suite, lint or build; no throwaway setups outside the repo; no servers or watchers. The repo's configured test command and the reviewer come after.
+  - "Design new code from scratch" became "keep new code modular and clean, but do not restructure existing code the task does not need". The no-bad-practices rule stays.
+- Not done yet (from the same analysis):
+  - `--effort` per agent (the claude CLI has `--effort low|medium|high|xhigh|max`).
+  - A live turn/token limit for CLI agents (maxTurns only applies to the API loop).
+  - Resuming the coder's session in fix rounds.
+
