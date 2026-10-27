@@ -59,7 +59,7 @@ sourcerer cost [runId] [--since 7d] [--by agent|role|llm]
 sourcerer worktree remove <slug> [--force]                 # after you have committed
 ```
 
-The reviewer has no tools: it reviews the diffs, coder notes, contract and test result in its prompt, and lists anything it can't judge from the diff as a comment. That keeps reviews fast (seconds, not minutes) on large repos. When the search index is on, Sourcerer also gives it existing definitions whose names resemble what the diff adds (e.g. a new `CountBranches` next to an existing `models/git/branch.go: func CountBranches`), so re-implemented helpers get caught.
+The reviewer has no tools: it reviews the diffs, coder notes, contract and test result in its prompt, and lists anything it can't judge from the diff as a comment. That keeps reviews fast (seconds, not minutes) on large repos.
 
 Run ids accept a unique prefix and default to the latest run.
 

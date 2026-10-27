@@ -700,3 +700,13 @@ Change:
 - Reviewer checklist item 5, Maintainability: re-implemented helpers, unused code, copied checks, undocumented error responses.
 - Tests: 164. `cancel.test.js` "aborting runCli kills..." failed once under full-suite load, then passed 3 of 3 alone and in a full rerun. It is timing-sensitive; not changed.
 
+
+## New code follows standards, not existing helpers (done)
+
+- User decision: new code should be written to current standards, not by reusing existing helpers, which may carry old practices.
+- Removed:
+  - The coder rule "search for an existing function and reuse it".
+  - src/rag/similar.js and the `similarFor` hook (the reviewer's "existing definitions with similar names" hint).
+  - The "re-implements an existing helper" part of reviewer checklist item 5.
+- Item 5 now covers unused code, copied checks and undocumented error responses, and tells the reviewer not to ask for reuse of existing helpers.
+- Kept: the other three coder rules (copy only what is needed, no unused code, document every response).

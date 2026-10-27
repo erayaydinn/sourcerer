@@ -85,7 +85,7 @@ function fixSection({ round, comments, testOutput }) {
   return parts.join('\n\n');
 }
 
-// context per side: { diff, test: { command, passed } | null, ignored: [{ path, content }], notes, similar }.
+// context per side: { diff, test: { command, passed } | null, ignored: [{ path, content }], notes }.
 // previous: last round's comments or null.
 export function reviewerPrompt(task, plan, context, previous) {
   const sides = Object.entries(context).map(([side, c]) => sideSection(side, c)).join('\n\n');
@@ -102,9 +102,9 @@ Review in this order:
 2. Correctness. Coders do not write tests by design: never request changes just because tests are missing; if it matters, mention it under "general".
 3. Security: authentication, secrets, input handling, abuse (e.g. missing rate limits), data that could be exposed.
 4. Deployment and operations: config, migrations, deploy/ignore lists, files that will not be committed, anything the server needs.
-5. Maintainability: logic that re-implements an existing helper (see "Existing definitions with similar names" when given),
-   types or code that are defined but not used, checks copied from nearby code that the new code does not need,
-   and API docs that leave out error responses the endpoint can return.
+5. Maintainability: types or code that are defined but not used, checks copied from nearby code that the new code
+   does not need, and API docs that leave out error responses the endpoint can return. New code is meant to follow
+   current standards, so do not ask coders to reuse existing helpers instead.
 If following the contract would remove a safeguard, do not ask for the safeguard to be removed; point out the conflict instead.
 The coder notes are the coders' own claims: verify them, and act on any risks they raise.
 Put each comment under the side that must change it, or "general" if it is not side-specific.
@@ -114,7 +114,7 @@ End your answer with exactly one fenced json block in this shape:
 \`\`\``;
 }
 
-function sideSection(side, { diff, test, ignored, notes, similar }) {
+function sideSection(side, { diff, test, ignored, notes }) {
   const testText = test
     ? `\`${test.command}\` ${test.passed ? 'passed' : 'failed'} (run by the orchestrator in the worktree, on this machine only; not on any server)`
     : 'no test command configured; the coder\'s own test claims are unverified';
@@ -134,7 +134,7 @@ ${ignoredText}
 Tests: ${testText}
 
 Coder notes (end of the coder's last answer):
-${notes || '(none)'}${similar ? `\n\n${similar}` : ''}`;
+${notes || '(none)'}`;
 }
 
 // Reads the last ```json block of an agent's answer and validates it.

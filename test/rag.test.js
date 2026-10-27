@@ -8,7 +8,6 @@ import { execa } from 'execa';
 import { buildIndex, excluded, readMeta } from '../src/rag/index.js';
 import { bestWindow, relevantContext, searchIndex } from '../src/rag/search.js';
 import { definitions, tokenize } from '../src/rag/tokenize.js';
-import { similarDefinitions } from '../src/rag/similar.js';
 
 const temp = (name) => mkdtempSync(join(tmpdir(), `sourcerer-${name}-`));
 const git = (cwd, ...args) => execa('git', args, { cwd });
@@ -115,25 +114,3 @@ test('bestWindow picks the densest lines; relevantContext respects the file and 
   assert.ok(text.length < 600 + 400, 'snippets stay within maxChars (plus headers)');
   assert.deepEqual(await relevantContext({ ...config(backend), rag: { ...rag, enabled: false } }, root, 'backend', 'coupon', null), { text: '', files: [] });
 });
-
-test('similar definitions: a diff that re-implements an existing helper points the reviewer at it', async () => {
-  const backend = await repo({
-    'models/branch.go': 'package models\n\nfunc CountBranches(repoID int64, includeDeleted bool) (int64, error) {\n\treturn 0, nil\n}\n',
-    'models/branch_test.go': 'package models\n\nfunc TestCountBranches(t *testing.T) {}\n',
-    'routers/branch.go': 'package routers\n\nfunc ListBranches() {}\n',
-  });
-  const root = temp('ws');
-  const worktree = temp('wt');
-  await git(backend, 'worktree', 'add', '-q', '-b', 'feat/x', worktree, 'main');
-  write(worktree, { 'routers/branch.go': 'package routers\n\nfunc ListBranches() {}\n\nfunc CountBranches() {}\n', 'routers/branch_test.go': 'package routers\n\nfunc TestCountBranches() {}\n' });
-  await git(worktree, 'add', '.');
-  const { stdout: diff } = await git(worktree, 'diff', '--cached', 'main');
-
-  assert.equal(await similarDefinitions(config(backend), root, 'backend', { diff, worktree }), '', 'no index yet: no hint');
-  await buildIndex(config(backend), root, 'backend');
-  const hint = await similarDefinitions(config(backend), root, 'backend', { diff, worktree });
-  assert.match(hint, /`CountBranches` \(new\) ~ models\/branch\.go:3: `func CountBranches\(repoID int64, includeDeleted bool\)/);
-  assert.doesNotMatch(hint, /_test\.go/, 'test files are neither new names nor candidates');
-  assert.doesNotMatch(hint, /routers\/branch\.go/, 'files the diff touches are not candidates');
-});
-
