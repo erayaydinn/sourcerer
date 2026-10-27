@@ -4,9 +4,11 @@ const WEB_TOOLS = ['web_search', 'web_fetch'];
 // CLIs that cannot be limited to a folder or a command list (verified: cursor-agent reads any file).
 export const UNCONFINED_BINS = ['cursor-agent'];
 
-// Commands coders may run: the configured list, extras, and each repo's own setup/test command.
-export function allowedCommands(config) {
-  const fromRepos = Object.values(config.repos).flatMap((repo) => [repo.setup, repo.test].filter(Boolean).map((cmd) => cmd.run.join(' ')));
+// Commands an agent may run: the configured list, extras, and the repo's own commands and setup/test command.
+// `side` (a coder's repo) limits the repo part to that repo; without it every repo counts.
+export function allowedCommands(config, side) {
+  const repos = side ? [config.repos[side]] : Object.values(config.repos);
+  const fromRepos = repos.flatMap((repo) => [...(repo.commands ?? []), ...[repo.setup, repo.test].filter(Boolean).map((cmd) => cmd.run.join(' '))]);
   return [...new Set([...config.security.allowCommands, ...config.security.extraCommands, ...fromRepos])];
 }
 

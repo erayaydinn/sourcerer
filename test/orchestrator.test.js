@@ -515,3 +515,21 @@ test('planner questions: with no one to answer, the planner is told to assume an
   assert.doesNotMatch(prompt, /you may ask the user/);
   assert.equal(out.status, 'failed');
 });
+
+test('with the allowlist on, each coder is told its own allowed commands', async () => {
+  const { config, agents } = await setup();
+  config.security = { commandAllowlist: true, allowCommands: ['git status'], extraCommands: [] };
+  config.repos.backend.commands = ['make fmt'];
+  config.repos.frontend.commands = ['pnpm lint'];
+  agents.find((a) => a.name === 'coder-backend').tools = ['run_command'];
+  const prompts = {};
+  const run = fakeRun(['frontend', 'backend'], {
+    'coder-backend': async (agent, opts) => { prompts.backend = opts.prompt; return result('coded'); },
+    'coder-frontend': async (agent, opts) => { prompts.frontend = opts.prompt; return result('coded'); },
+  });
+  await runTask('Commands', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
+  assert.match(prompts.backend, /Shell commands you may run .*: git status, make fmt\./);
+  assert.doesNotMatch(prompts.backend, /pnpm lint/);
+  assert.doesNotMatch(prompts.frontend, /Shell commands you may run/, 'no run_command tool, no list');
+});
+

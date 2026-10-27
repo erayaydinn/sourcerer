@@ -10,7 +10,7 @@ export const WORKSPACE_TEMPLATE = `# Your Sourcerer settings: only what differs 
 #
 # llms:      extra or replaced LLM profiles (see \`sourcerer models\`)
 # agents:    per agent: { llm, model, fallbackLlm } (see \`sourcerer agents\`)
-# repos:     per side: { base, setup, test, docs } (paths usually go in .env)
+# repos:     per side: { base, setup, test, docs, commands } (paths usually go in .env)
 # budget:    maxCostPerRun, maxCostPerAgent, maxTokensPerRun, maxTokensPerAgent
 # review:    maxRounds
 # pricing:   <model>: { input, output, cachedInput }  (USD per 1M tokens)

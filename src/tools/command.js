@@ -14,7 +14,7 @@ export const run_command = {
     if (!allow.includes(command)) throw new Error(`command not allowed: ${command} (allowed: ${allow.join(', ')})`);
     const line = [command, ...args].join(' ');
     if (security?.commandAllowlist && !commandAllowed(line, security.allowCommands)) {
-      throw new Error(`command not allowed: ${line} (allowed: ${security.allowCommands.join(', ')}; add more under security.extraCommands)`);
+      throw new Error(`command not allowed: ${line} (allowed: ${security.allowCommands.join(', ')}; add more under repos.<side>.commands or security.extraCommands)`);
     }
     const [bin, binArgs] = sandboxed(command, args, { security, write: [cwd, gitDirOf(cwd)].filter(Boolean), read: readDirs });
     const result = await execa(bin, binArgs, { cwd, reject: false, all: true, timeout: timeoutSec * 1000, cancelSignal: signal });

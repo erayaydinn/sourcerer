@@ -8,7 +8,7 @@ import * as claude from '../src/adapters/cli/claude.js';
 import { cleanCommand } from '../src/cli/clean.js';
 import { initCommand } from '../src/cli/init.js';
 import { loadProject } from '../src/cli/project.js';
-import { applySecurity, commandAllowed, isSecretFile, redact } from '../src/core/security.js';
+import { allowedCommands, applySecurity, commandAllowed, isSecretFile, redact } from '../src/core/security.js';
 import { ignoredFiles } from '../src/git/worktree.js';
 import { buildIndex } from '../src/rag/index.js';
 import { runTool } from '../src/tools/index.js';
@@ -142,3 +142,17 @@ test('with the macOS sandbox on, cursor-agent is allowed (the OS confines it)', 
   const root = workspace('agents: { reviewer: { llm: cursor-main } }\n');
   assert.deepEqual(loadProject(root).errors, []);
 });
+
+test('repo commands: a coder may run its own repo\'s commands, not the other repo\'s', () => {
+  const root = workspace([
+    'repos:',
+    '  backend: { commands: [make fmt, make generate-swagger], test: { run: [make, test-unit], timeoutSec: 60 } }',
+    '  frontend: { commands: [pnpm lint] }',
+    'security: { allowCommands: [git status], sandbox: { enabled: false } }',
+  ].join('\n'));
+  const { config } = loadProject(root);
+  assert.deepEqual(allowedCommands(config, 'backend'), ['git status', 'make fmt', 'make generate-swagger', 'make test-unit']);
+  assert.deepEqual(allowedCommands(config, 'frontend'), ['git status', 'pnpm lint']);
+  assert.deepEqual(allowedCommands(config), ['git status', 'pnpm lint', 'make fmt', 'make generate-swagger', 'make test-unit']);
+});
+

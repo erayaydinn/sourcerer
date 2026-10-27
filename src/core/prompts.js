@@ -60,8 +60,11 @@ or what has an obvious default. At most ${MAX_QUESTIONS} short questions. Then e
 
 // feedback: { round, comments, testOutput } for fix rounds, null for the first pass.
 // context: likely relevant files from the repo search (first pass only), or ''.
-export function coderPrompt(task, plan, side, workspace, feedback, context = '') {
+// commands: the shell commands the coder may run (allowlist on), or null.
+export function coderPrompt(task, plan, side, workspace, feedback, context = '', commands = null) {
   const readOnly = workspace.readDirs.length ? `\nRead-only (do not change): ${workspace.readDirs.join(', ')}` : '';
+  const allowed = commands ? `\nShell commands you may run (each may take more arguments; anything else is denied): ${commands.join(', ')}.
+Run each one on its own: no &&, ;, pipes or environment-variable prefixes. If a command you need is not listed, say so in your answer.` : '';
   return `Task: ${task}
 
 API contract:
@@ -71,7 +74,7 @@ Your part (${side}):
 ${plan.instructions[side]}
 
 Work only in ${workspace.cwd}.${readOnly}
-Run only the tests that cover your change and fix failures. Do not commit or push.${context ? `\n\n${context}` : ''}${feedback ? fixSection(feedback) : ''}`;
+Run only the tests that cover your change and fix failures. Do not commit or push.${allowed}${context ? `\n\n${context}` : ''}${feedback ? fixSection(feedback) : ''}`;
 }
 
 function fixSection({ round, comments, testOutput }) {

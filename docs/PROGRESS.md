@@ -644,3 +644,26 @@ Limits:
   - A live turn/token limit for CLI agents (maxTurns only applies to the API loop).
   - Resuming the coder's session in fix rounds.
 
+## Benchmark on Gitea, and per-repo commands (done)
+
+Benchmark: Gitea (about 6.4k files, half Go), `--side backend`, task "add GET /api/v1/repos/{owner}/{repo}/branches/count". Coder numbers:
+
+| | new prompts (9701e72) | old prompts (55020e7) | cursor-agent direct (grok-4.7-medium) |
+|---|---|---|---|
+| rounds | 1 | 2 | 1 |
+| tokens, input + output | 69,883 | 126,398 | 133,601 |
+| tokens read from cache | 1,080,310 | 1,992,956 | 3,891,968 |
+| duration | 153 s | 251 s | 753 s |
+| tool calls | 42 | 64 | 124 |
+
+- The Sourcerer coders couldn't run `make fmt` or `make generate-swagger` (not allowlisted). They hand-edited generated swagger files.
+  - In the old run, the reviewer asked for a second round because nothing had been run.
+  - Cursor (no command limit) ran the integration tests.
+- `go test` itself was allowed. Checked with a real claude call: the plain, `-tags '...'` and `-run` forms all pass `Bash(go test *)`. It failed on the bench machine because Go 1.23 was installed with GOTOOLCHAIN=local, while Gitea needs Go 1.27.
+- Token counts in Sourcerer (TUI, summary.json) exclude cache reads. Including them, the coder total was 1.1M to 2.1M here.
+
+Change:
+- `repos.<side>.commands`: extra command prefixes that side's coder may run.
+- `allowedCommands(config, side)` now gives a coder only its own repo's commands and setup/test, plus the global lists. runAgent passes `agent.repo`.
+- When the allowlist is on and the coder has run_command, coderPrompt lists the allowed commands. It also says to run each one on its own (no &&, pipes or env prefixes) and to report a missing command instead of working around it.
+- Tests: 162.

@@ -8,7 +8,7 @@ import { emit } from './events.js';
 import { coderPrompt, parseJsonBlock, planSchema, plannerPrompt, plannerReplySchema, reviewSchema, reviewerPrompt } from './prompts.js';
 import { attachRunLogger } from './run-logger.js';
 import { gitDirOf, sandboxed } from './sandbox.js';
-import { redact } from './security.js';
+import { allowedCommands, redact } from './security.js';
 
 // task -> planner -> contract -> worktrees -> review loop (coders in parallel -> tests -> diffs -> reviewer).
 // `confirm(message)` resolves true to continue over budget. `run` is replaceable for tests.
@@ -84,7 +84,8 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
       const workspace = workspaceFor(coder, worktrees, dir);
       const context = round === 1 && ctx.contextFor ? await ctx.contextFor({ side, task, plan, worktree: worktrees[side] }) : '';
       if (context) writeFileSync(join(runDir, `${side}.context.txt`), context);
-      return callAgent(ctx, coder, coderPrompt(task, plan, side, workspace, sideFeedback, context), workspace, round)
+      const commands = ctx.config.security?.commandAllowlist && coder.tools.includes('run_command') ? allowedCommands(ctx.config, side) : null;
+      return callAgent(ctx, coder, coderPrompt(task, plan, side, workspace, sideFeedback, context, commands), workspace, round)
         .then((output) => { ctx.notes[side] = redact(output).slice(-contextChars); });
     }));
 

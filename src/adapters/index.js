@@ -22,7 +22,7 @@ export function runAgent(agent, { prompt, cwd, readDirs = [], sources, config, p
     pricing,
     onLog,
     signal,
-    security: config.security && { ...config.security, allowCommands: allowedCommands(config) },
+    security: config.security && { ...config.security, allowCommands: allowedCommands(config, agent.repo) },
   };
   if (agent.profile.type === 'cli') return runCli(agent.profile, opts);
   return runLoop(APIS[agent.profile.type], agent.profile, opts);

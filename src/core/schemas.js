@@ -43,6 +43,7 @@ const repo = z.object({
   setup: command.optional(),
   test: command.optional(),
   docs: z.array(z.string()).default([]),
+  commands: z.array(z.string()).default([]), // extra commands this repo's coder may run (prefixes)
 }).strict();
 
 // Env values arrive as text: "5" -> 5 for fields that may come from ${VAR}. Non-numbers still fail.

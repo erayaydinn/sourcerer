@@ -6,6 +6,7 @@
 # base (optional): branch new worktrees start from; when unset, the repo's main branch
 # (origin's default branch, else main or master). setup (optional): runs once in each new worktree.
 # test (optional): run by the orchestrator after every coder pass. docs: paths searched by search_docs.
+# commands (optional): extra commands this repo's coder may run, e.g. [make fmt, make generate-swagger].
 repos:
   frontend:
     docs: [docs, adr, README.md]

@@ -103,7 +103,7 @@ sourcerer use coder cursor-fast --fallback cursor-main     # a separate profile 
 - `sourcerer smoke <profile>` tries the profile's own model, not one given with `use --model`. To try another model, make it a profile.
 - Which models are available, and whether one can be selected explicitly with `--model`, depends on your plan with that CLI. Check with `smoke` before a long run.
 
-**`sourcerer.yaml` sections**: `llms` (profiles, replaced by name), `agents` (`<name>: { llm, model, fallbackLlm }`), `repos` (`<side>: { base, setup, test, docs, path }`; `base` defaults to the repo's main branch: origin's default branch, else `main` or `master`), `budget`, `review`, `tools`, `paths`, `pricing` (`<model>: { input, output, cachedInput }`, USD per 1M tokens; needed for CLIs that don't report cost). To change a prompt, put a full agent file in `<workspace>/agents/<name>.yaml`: it replaces the package's agent of that name (or adds a new agent).
+**`sourcerer.yaml` sections**: `llms` (profiles, replaced by name), `agents` (`<name>: { llm, model, fallbackLlm }`), `repos` (`<side>: { base, setup, test, docs, commands, path }`; `commands`: extra commands that repo's coder may run, e.g. `[make fmt, make generate-swagger]`; `base` defaults to the repo's main branch: origin's default branch, else `main` or `master`), `budget`, `review`, `tools`, `paths`, `pricing` (`<model>: { input, output, cachedInput }`, USD per 1M tokens; needed for CLIs that don't report cost). To change a prompt, put a full agent file in `<workspace>/agents/<name>.yaml`: it replaces the package's agent of that name (or adds a new agent).
 
 **Environment variables** (see `.env.example`):
 
@@ -161,7 +161,7 @@ Secure by default; loosen per workspace under `security:` in `sourcerer.yaml`.
 | Setting | Default | Effect |
 |---|---|---|
 | `webAccess` | `false` | removes web search/fetch from every agent |
-| `commandAllowlist` | `true` | coders may only run `allowCommands` + `extraCommands` + each repo's `setup`/`test` command. Chained commands (`git status && cat ~/.ssh/id_rsa`), `curl`, `ssh` and `git push` are denied |
+| `commandAllowlist` | `true` | coders may only run `allowCommands` + `extraCommands` + their own repo's `commands` and `setup`/`test` command (the list is also given to the coder). Chained commands (`git status && cat ~/.ssh/id_rsa`), `curl`, `ssh` and `git push` are denied |
 | `confineFiles` | `true` | Claude can only read and search its worktree and the other repo |
 | `sandbox.enabled` | `auto` | **macOS:** agent CLIs, every command they run, your tests and setup commands run in an OS sandbox (`sandbox-exec`). Nothing under your home folder can be read or written except the task's worktree (and its `.git`), the other repo (read-only), the CLIs' own install and login folders, language toolchains and package caches. Add paths with `sandbox.allowRead` / `allowWrite` |
 | `trustUnconfinedCli` | `false` | without the sandbox (other platforms, or turned off), `cursor-agent` can't be limited: it reads any file, even with its own `--sandbox` flag. So it is refused unless you set this |
