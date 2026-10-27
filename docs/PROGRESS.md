@@ -677,3 +677,9 @@ Change:
 - Reviewer (agents/reviewer.yaml, reviewerPrompt): coders don't write tests by design. Missing tests alone are not a reason for request-changes; mention them under "general" if they matter.
 - Known effect: if the repo's test command fails because a test must change, the coder can't fix it. Fix rounds then repeat until review.maxRounds, and the coder notes say why.
 
+
+## Tool-free reviewer (done)
+
+- Why: on Gitea with grok, the coder took as long as Cursor (327 s vs 326 s). The run took 565 s, partly because the reviewer explored the repo with its tools (169 s).
+- Reviewer (agents/reviewer.yaml): `tools: []`, maxTurns 2. It reviews only the prompt (diffs, notes, contract, test result) and comments on what the diff can't show.
+  - Checked on a real saved review prompt with claude-cheap: 18 s / $0.09 vs 28 s / $0.11 with tools, same verdict.
