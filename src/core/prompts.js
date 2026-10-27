@@ -74,7 +74,7 @@ Your part (${side}):
 ${plan.instructions[side]}
 
 Work only in ${workspace.cwd}.${readOnly}
-Run only the tests that cover your change and fix failures. Do not commit or push.${allowed}${context ? `\n\n${context}` : ''}${feedback ? fixSection(feedback) : ''}`;
+Do not write or change tests. Run only the existing tests that cover your change; if they fail, fix your code. Do not commit or push.${allowed}${context ? `\n\n${context}` : ''}${feedback ? fixSection(feedback) : ''}`;
 }
 
 function fixSection({ round, comments, testOutput }) {
@@ -99,7 +99,7 @@ ${sides}${previousText}
 
 Review in this order:
 1. Contract: each side matches the contract, and the sides match each other.
-2. Correctness and tests.
+2. Correctness. Coders do not write tests by design: never request changes just because tests are missing; if it matters, mention it under "general".
 3. Security: authentication, secrets, input handling, abuse (e.g. missing rate limits), data that could be exposed.
 4. Deployment and operations: config, migrations, deploy/ignore lists, files that will not be committed, anything the server needs.
 If following the contract would remove a safeguard, do not ask for the safeguard to be removed; point out the conflict instead.

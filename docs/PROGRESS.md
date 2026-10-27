@@ -667,3 +667,13 @@ Change:
 - `allowedCommands(config, side)` now gives a coder only its own repo's commands and setup/test, plus the global lists. runAgent passes `agent.repo`.
 - When the allowlist is on and the coder has run_command, coderPrompt lists the allowed commands. It also says to run each one on its own (no &&, pipes or env prefixes) and to report a missing command instead of working around it.
 - Tests: 162.
+
+## Coders don't write tests (done)
+
+- Coder prompts (agents/coder-*.yaml, coderPrompt) now say:
+  - Write no new tests and change no test files.
+  - Verify by compiling or type-checking, and by running only the existing tests that cover the change.
+  - If a test fails, fix the code. If the test itself must change, say so in the answer.
+- Reviewer (agents/reviewer.yaml, reviewerPrompt): coders don't write tests by design. Missing tests alone are not a reason for request-changes; mention them under "general" if they matter.
+- Known effect: if the repo's test command fails because a test must change, the coder can't fix it. Fix rounds then repeat until review.maxRounds, and the coder notes say why.
+
