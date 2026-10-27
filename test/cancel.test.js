@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -44,3 +45,30 @@ test('runCli refuses to start when already aborted', async () => {
   await assert.rejects(runCli({ bin: 'claude' }, { prompt: 'x', cwd: tmpdir(), readDirs: [], model: 'm', allowedTools: [], timeoutSec: 1, pricing: {}, signal: AbortSignal.abort() }),
     (error) => error.name === 'AbortError');
 });
+
+// Sourcerer stopped by `kill` (SIGTERM) or a closed terminal (SIGHUP), not Ctrl+C: its agent CLIs run
+// detached, so they must be stopped explicitly.
+for (const [name, code] of [['SIGTERM', 143], ['SIGHUP', 129]]) {
+  test(`${name} to Sourcerer stops running agent CLIs and the processes they started`, async () => {
+    const bin = mkdtempSync(join(tmpdir(), 'sourcerer-signal-'));
+    const pidFile = join(bin, 'pids');
+    writeFileSync(join(bin, 'claude'), `#!/bin/sh\ncat > /dev/null\nsleep 30 &\necho $! > '${pidFile}'\necho $$ >> '${pidFile}'\nwait\n`);
+    chmodSync(join(bin, 'claude'), 0o755);
+    const cli = new URL('../src/adapters/cli.js', import.meta.url).href;
+    const script = `import { runCli } from '${cli}';
+await runCli({ bin: 'claude' }, { prompt: 'x', cwd: '${bin}', readDirs: [], model: 'm', allowedTools: [], timeoutSec: 60, pricing: {} });`;
+    const sourcerer = spawn(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, stdio: 'ignore' });
+    const exited = new Promise((resolve) => sourcerer.once('exit', (exitCode) => resolve(exitCode)));
+
+    const written = () => (existsSync(pidFile) ? readFileSync(pidFile, 'utf8').trim().split('\n').filter(Boolean) : []);
+    for (let i = 0; i < 100 && written().length < 2; i++) await sleep(50);
+    const pids = written().map(Number);
+    assert.equal(pids.length, 2);
+    assert.ok(pids.every(alive));
+
+    sourcerer.kill(name);
+    assert.equal(await exited, code);
+    for (let i = 0; i < 40 && pids.some(alive); i++) await sleep(100);
+    assert.deepEqual(pids.map(alive), [false, false], 'the agent CLI and its child are both gone');
+  });
+}

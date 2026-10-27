@@ -8,6 +8,26 @@ import * as cursor from './cli/cursor.js';
 const RECIPES = { claude, 'cursor-agent': cursor };
 export const CLI_BINS = Object.keys(RECIPES);
 
+// Agent CLIs still running, by process group id. They run detached (see runCli), so a `kill` of Sourcerer
+// (SIGTERM) or a closed terminal or tmux pane (SIGHUP) would not reach them: stop them first, then exit.
+// The wait is synchronous on purpose: no other code runs meanwhile, so a killed agent is not taken for a
+// failure (no fallback agent gets started) and nothing exits before this does.
+const groups = new Set();
+let exitSignalsHandled = false;
+function stopGroupsOnExitSignals() {
+  if (exitSignalsHandled) return;
+  exitSignalsHandled = true;
+  for (const [name, code] of [['SIGTERM', 143], ['SIGHUP', 129]]) {
+    process.once(name, () => {
+      for (const pid of groups) signalGroup(pid, 'SIGTERM');
+      const tick = new Int32Array(new SharedArrayBuffer(4));
+      for (let i = 0; i < 30 && [...groups].some(groupAlive); i++) Atomics.wait(tick, 0, 0, 100);
+      for (const pid of groups) signalGroup(pid, 'SIGKILL');
+      process.exit(code);
+    });
+  }
+}
+
 export async function runCli(profile, { prompt, system, cwd, readDirs, model, allowedTools, timeoutSec, pricing, onLog, signal, security }) {
   const recipe = RECIPES[profile.bin];
   if (!recipe) throw new Error(`no CLI recipe for "${profile.bin}"`);
@@ -22,10 +42,15 @@ export async function runCli(profile, { prompt, system, cwd, readDirs, model, al
   });
   const subprocess = execa(bin, binArgs, { cwd, input, timeout: timeoutSec * 1000, detached: true });
   const stop = () => killGroup(subprocess.pid);
+  groups.add(subprocess.pid);
+  stopGroupsOnExitSignals();
   signal?.addEventListener('abort', stop, { once: true });
   // Once the CLI itself exits, its work is done: stop what it left running (a dev server or a watcher keeps
   // stdout open, and the run would wait for it until the timeout).
-  subprocess.once('exit', stop);
+  subprocess.once('exit', () => {
+    groups.delete(subprocess.pid);
+    stop();
+  });
   if (onLog && recipe.logLine) streamLines(subprocess.stdout, (line) => {
     const text = safeLogLine(recipe, line);
     if (text) onLog(text);
@@ -67,17 +92,27 @@ function safeLogLine(recipe, line) {
   }
 }
 
+function signalGroup(pid, sig) {
+  try {
+    process.kill(-pid, sig);
+  } catch {
+    // already gone
+  }
+}
+
+function groupAlive(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // SIGTERM the process group, then SIGKILL whatever is left. Group kill is POSIX-only (Windows needs WSL).
 export function killGroup(pid) {
-  const send = (sig) => {
-    try {
-      process.kill(-pid, sig);
-    } catch {
-      // already gone
-    }
-  };
-  send('SIGTERM');
-  setTimeout(() => send('SIGKILL'), 3000).unref();
+  signalGroup(pid, 'SIGTERM');
+  setTimeout(() => signalGroup(pid, 'SIGKILL'), 3000).unref();
 }
 
 // A short, readable error instead of execa's message (which embeds the whole stdout).

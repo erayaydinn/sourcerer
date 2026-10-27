@@ -710,3 +710,17 @@ Change:
   - The "re-implements an existing helper" part of reviewer checklist item 5.
 - Item 5 now covers unused code, copied checks and undocumented error responses, and tells the reviewer not to ask for reuse of existing helpers.
 - Kept: the other three coder rules (copy only what is needed, no unused code, document every response).
+
+## Agents stopped on SIGTERM / SIGHUP too (done)
+
+- Found during the Gitea rerun: Sourcerer was stopped with SIGTERM, but the agent CLI it had started (a detached process group) kept running and spending. Only SIGINT (Ctrl+C) stopped agents.
+- src/adapters/cli.js keeps the running agent process groups in a Set. On SIGTERM or SIGHUP it:
+  - sends SIGTERM to every group;
+  - waits up to 3 s, synchronously (Atomics.wait);
+  - sends SIGKILL to whatever is left;
+  - exits with 143 or 129.
+- The wait is synchronous on purpose. With an async wait, the killed agent's failure reached the orchestrator first, so the process exited with code 1 before the handler finished, and a fallback agent could start without being tracked.
+- Tests (cancel.test.js): SIGTERM and SIGHUP each stop a fake agent and its child, and the exit code is 143 or 129. Both fail without the fix.
+- End-to-end: `sourcerer run` with a hanging fake claude got SIGTERM. It exited with 143, nothing was left running, and no fallback agent was started.
+- Test and setup commands are not detached; execa already stops them when Sourcerer exits.
+
