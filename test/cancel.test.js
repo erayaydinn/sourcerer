@@ -27,9 +27,10 @@ test('aborting runCli kills the agent CLI and the processes it started', async (
   const running = runCli({ bin: 'claude' }, {
     prompt: 'x', cwd: bin, readDirs: [], model: 'm', allowedTools: [], timeoutSec: 60, pricing: {}, signal: controller.signal,
   });
-  for (let i = 0; i < 50 && !existsSync(pidFile); i++) await sleep(50);
-  await sleep(100);
-  const pids = readFileSync(pidFile, 'utf8').trim().split('\n').map(Number);
+  // Wait for both lines: the fake CLI writes them one after the other, so the file can exist with only one.
+  const written = () => (existsSync(pidFile) ? readFileSync(pidFile, 'utf8').trim().split('\n').filter(Boolean) : []);
+  for (let i = 0; i < 100 && written().length < 2; i++) await sleep(50);
+  const pids = written().map(Number);
   assert.equal(pids.length, 2);
   assert.ok(pids.every(alive));
 
