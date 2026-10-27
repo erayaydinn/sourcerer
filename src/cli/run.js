@@ -7,6 +7,7 @@ import { taskSlug } from '../git/worktree.js';
 import { insideTmux, launch, openLogPanes, openShellWindow, quote } from '../ui/tmux.js';
 import { buildIndex } from '../rag/index.js';
 import { relevantContext } from '../rag/search.js';
+import { similarDefinitions } from '../rag/similar.js';
 import { printEvents, printResult } from './print.js';
 import { loadProject, reportProblems } from './project.js';
 
@@ -25,6 +26,7 @@ export async function executeTask(task, { root, llm = [], project: loaded, sides
     pricing: config.pricing,
     bus, confirm, pause, ask, sides, signal, run,
     contextFor: config.rag.enabled ? (input) => repoContext(config, root, input, print) : undefined,
+    similarFor: config.rag.enabled ? (input) => similarCode(config, root, input, print) : undefined,
   });
   printResult(result, print);
   return result;
@@ -111,6 +113,16 @@ function openPanesOn(bus, defs, interactive, print) {
   const paneAgents = [...coders, ...defs.filter((def) => def.role === 'reviewer')].map((def) => def.name);
   bus.on('run.started', (e) => openLogPanes(e.runDir, paneAgents).catch(report));
   if (interactive) bus.on('worktrees.ready', (e) => openShellWindow(e.worktrees).catch(report));
+}
+
+// Existing definitions that resemble what the diff adds, for the reviewer. Never fails the run.
+async function similarCode(config, root, { side, diff, worktree }, print) {
+  try {
+    return await similarDefinitions(config, root, side, { diff, worktree });
+  } catch (error) {
+    print(`  similar code ${side}: ${error instanceof Error ? error.message : error} (continuing without it)`);
+    return '';
+  }
 }
 
 // Updates the side's index (fast when the base is unchanged) and returns the coder context.

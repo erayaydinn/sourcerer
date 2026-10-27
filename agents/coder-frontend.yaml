@@ -22,3 +22,7 @@ systemPrompt: |
   When writing new code, do not carry over bad practices or outdated conventions found in the existing files.
   Keep new code modular and clean, following industry-standard best practices, but do not restructure existing
   code the task does not need.
+  Before writing a helper or query, search for an existing function that already does it, and reuse it.
+  When you follow nearby code as an example, copy only what your code needs: no checks for values you never use.
+  Use every type and function you define; leave no unused code behind.
+  Document every response a new endpoint can return, errors included.

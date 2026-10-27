@@ -533,3 +533,14 @@ test('with the allowlist on, each coder is told its own allowed commands', async
   assert.doesNotMatch(prompts.frontend, /Shell commands you may run/, 'no run_command tool, no list');
 });
 
+test('similarFor: its hint reaches the reviewer prompt and the run folder', async () => {
+  const { config, agents } = await setup();
+  let reviewPrompt = '';
+  const run = fakeRun(['backend'], { reviewer: async (agent, opts) => { reviewPrompt = opts.prompt; return result(approve); } });
+  const similarFor = async ({ side, diff }) => (diff.includes('backend.js') ? `Existing definitions with similar names (${side}): hello()` : '');
+  const out = await runTask('Hello', { config, agents, pricing: {}, bus: createBus(), confirm: deny, similarFor, run });
+  assert.match(reviewPrompt, /Existing definitions with similar names \(backend\): hello\(\)/);
+  assert.match(reviewPrompt, /5\. Maintainability/);
+  assert.ok(existsSync(join(out.runDir, 'backend.r1.similar.txt')));
+});
+

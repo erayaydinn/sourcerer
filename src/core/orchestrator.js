@@ -17,14 +17,15 @@ import { allowedCommands, redact } from './security.js';
 // `sides` (optional, from --side) fixes which sides are worked on instead of the planner's choice.
 // `signal` (optional AbortSignal) stops the run: running agents and commands are killed, logs are kept.
 // `contextFor({ side, task, plan, worktree })` (optional) returns extra coder context, e.g. from a repo search.
-export async function runTask(task, { config, agents, pricing, bus, confirm, pause, ask, sides, signal, contextFor, run = runAgent, now = new Date() }) {
+// `similarFor({ side, diff, worktree })` (optional) returns existing code resembling what the diff adds, for the reviewer.
+export async function runTask(task, { config, agents, pricing, bus, confirm, pause, ask, sides, signal, contextFor, similarFor, run = runAgent, now = new Date() }) {
   const slug = taskSlug(task);
   const runId = `${stamp(now)}-${slug}`;
   const runDir = join(config.paths.runs, runId);
   mkdirSync(runDir, { recursive: true });
   attachRunLogger(bus, runDir);
 
-  const ctx = { runId, runDir, worktrees: {}, config, pricing, bus, run, confirm, pause, signal, contextFor, budget: createBudget(config.budget), gate: Promise.resolve(), stoppedBy: null, round: 0, lastComments: null, notes: {} };
+  const ctx = { runId, runDir, worktrees: {}, config, pricing, bus, run, confirm, pause, signal, contextFor, similarFor, budget: createBudget(config.budget), gate: Promise.resolve(), stoppedBy: null, round: 0, lastComments: null, notes: {} };
   let worktrees = {};
   let status = 'failed';
   let errorText;
@@ -111,7 +112,9 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
       const file = join(runDir, `${side}.r${round}.diff`);
       writeFileSync(file, diff);
       const ignored = await ignoredFiles(worktrees[side], contextChars, ctx.config.security?.secretFiles ?? []);
-      context[side] = { diff, test: tests[side] ?? null, ignored, notes: ctx.notes[side] };
+      const similar = ctx.similarFor ? await ctx.similarFor({ side, diff, worktree: worktrees[side] }) : '';
+      if (similar) writeFileSync(join(runDir, `${side}.r${round}.similar.txt`), similar);
+      context[side] = { diff, test: tests[side] ?? null, ignored, notes: ctx.notes[side], similar };
       emit(ctx.bus, 'diff.ready', { runId: ctx.runId, side, round, file, filesChanged });
     }
 

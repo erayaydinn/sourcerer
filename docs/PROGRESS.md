@@ -683,3 +683,20 @@ Change:
 - Why: on Gitea with grok, the coder took as long as Cursor (327 s vs 326 s). The run took 565 s, partly because the reviewer explored the repo with its tools (169 s).
 - Reviewer (agents/reviewer.yaml): `tools: []`, maxTurns 2. It reviews only the prompt (diffs, notes, contract, test result) and comments on what the diff can't show.
   - Checked on a real saved review prompt with claude-cheap: 18 s / $0.09 vs 28 s / $0.11 with tools, same verdict.
+
+## Code quality: coder rules, similar-code hints, reviewer checklist (done)
+
+- From the Gitea comparison: several outputs copied an unneeded `GitRepo == nil` check from ListBranches. Five of six re-implemented `git_model.CountBranches`. One defined `api.BranchCount` and returned an anonymous struct. Two documented only the 200 response.
+- Coder prompts: four new rules.
+  - Search for and reuse an existing helper.
+  - Copy only what is needed from example code.
+  - Leave no unused types or functions.
+  - Document every response, errors included.
+- src/rag/similar.js: finds existing definitions that resemble what the diff adds.
+  - It takes the definitions the diff adds (the `definitions()` regexes) and searches the side's BM25 index for each name.
+  - It lists definitions in other, non-test files whose name shares at least half the terms: path, line and signature, at most 10 lines.
+  - Wired as runTask's optional `similarFor` (run.js, only with rag on, never fails the run). It goes into the reviewer prompt per side and is saved as `<side>.r<round>.similar.txt`.
+  - On the real Gitea diffs it returns exactly `models/git/branch.go:555: func CountBranches(...)` in about 1.4 s.
+- Reviewer checklist item 5, Maintainability: re-implemented helpers, unused code, copied checks, undocumented error responses.
+- Tests: 164. `cancel.test.js` "aborting runCli kills..." failed once under full-suite load, then passed 3 of 3 alone and in a full rerun. It is timing-sensitive; not changed.
+
