@@ -225,7 +225,7 @@ test('failing tests skip the reviewer and go back to the coder with output', asy
   const out = await runTask('Fix tests', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
   assert.equal(out.status, 'approved');
   assert.deepEqual(calls, ['planner', 'coder-backend:1', 'coder-backend:2', 'reviewer:1']);
-  assert.match(prompts['coder-backend'][1], /test command failed[\s\S]*expected fixed/);
+  assert.match(prompts['coder-backend'][1], /` failed\. End of its output:[\s\S]*expected fixed/);
   assert.match(prompts.reviewer[0], /Tests: `node -e .*` passed \(run by the orchestrator in the worktree, on this machine only/);
   assert.ok(existsSync(join(out.runDir, 'backend.r1.test.txt')));
 });
@@ -462,11 +462,11 @@ test('a token limit pauses the run like a cost limit; unknown-cost calls still c
   assert.deepEqual(summary.tokensPerAgent, { planner: 700, 'coder-backend': 700 });
 });
 
-test('contextFor adds repo context to the first coder pass only and saves it in the run', async () => {
+test('contextFor: search results go to the planner (no plan yet) and to the first coder pass only', async () => {
   const { config, agents } = await setup();
   const asked = [];
   const contextFor = async ({ side, plan, worktree }) => {
-    asked.push({ side, worktree: Boolean(worktree), contract: plan.contract });
+    asked.push({ side, worktree: Boolean(worktree), contract: plan?.contract ?? null });
     return `Likely relevant files (BM25 search of the ${side} repo; ...)\n### src/x.js`;
   };
   let reviews = 0;
@@ -474,7 +474,13 @@ test('contextFor adds repo context to the first coder pass only and saves it in 
   const { run, prompts } = recorder(['backend'], { reviewer });
   const out = await runTask('Context', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run, contextFor });
   assert.equal(out.status, 'approved');
-  assert.deepEqual(asked, [{ side: 'backend', worktree: true, contract: 'GET /hello -> { msg: string }' }]);
+  assert.deepEqual(asked, [
+    { side: 'frontend', worktree: false, contract: null },
+    { side: 'backend', worktree: false, contract: null },
+    { side: 'backend', worktree: true, contract: 'GET /hello -> { msg: string }' },
+  ]);
+  assert.match(prompts.planner[0], /BM25 search of the frontend repo[\s\S]*BM25 search of the backend repo/);
+  assert.match(readFileSync(join(out.runDir, 'planner.context.txt'), 'utf8'), /### src\/x\.js/);
   assert.match(prompts['coder-backend'][0], /Likely relevant files \(BM25 search of the backend repo/);
   assert.doesNotMatch(prompts['coder-backend'][1], /Likely relevant files/, 'not repeated in fix rounds');
   assert.match(readFileSync(join(out.runDir, 'backend.context.txt'), 'utf8'), /### src\/x\.js/);
@@ -531,4 +537,34 @@ test('with the allowlist on, each coder is told its own allowed commands', async
   assert.match(prompts.backend, /Shell commands you may run .*: git status, make fmt\./);
   assert.doesNotMatch(prompts.backend, /pnpm lint/);
   assert.doesNotMatch(prompts.frontend, /Shell commands you may run/, 'no run_command tool, no list');
+});
+
+test('repo checks run before the test command; the first failing one goes back to the coder by name', async () => {
+  // check: passes once the coder wrote formatted.txt. test: records that it ran.
+  const check = { run: ['node', '-e', "require('fs').existsSync('formatted.txt') || (console.log('not formatted'), process.exit(1))"], timeoutSec: 10 };
+  const test = { run: ['node', '-e', "require('fs').appendFileSync('test-ran.txt', 'x')"], timeoutSec: 10 };
+  const { config, agents } = await setup(undefined, { test });
+  config.repos.backend.checks = [check];
+  const base = fakeRun(['backend']);
+  const { run, calls, prompts } = recorder(['backend'], {
+    'coder-backend': async (agent, opts) => {
+      if (/fix round/.test(opts.prompt)) writeFileSync(join(opts.cwd, 'formatted.txt'), 'ok');
+      return base({ ...agent, name: 'x' }, opts);
+    },
+  });
+  const out = await runTask('Checks', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
+  assert.equal(out.status, 'approved');
+  assert.deepEqual(calls, ['planner', 'coder-backend:1', 'coder-backend:2', 'reviewer:1']);
+  assert.match(prompts['coder-backend'][1], /`node -e require\('fs'\)\.existsSync\('formatted\.txt'\)[^`]*` failed\. End of its output:[\s\S]*not formatted/);
+  assert.equal(readFileSync(join(out.worktrees.backend, 'test-ran.txt'), 'utf8'), 'x', 'the test command ran only once the check passed');
+  assert.match(prompts.reviewer[0], /Tests: `node -e .*formatted.*; node -e .*test-ran.*` passed/);
+});
+
+test('the planner\'s files reach that side\'s coder', async () => {
+  const { config, agents } = await setup();
+  const withFiles = json({ sides: ['backend'], contract: 'c', instructions: { backend: 'b' }, files: { backend: ['models/branch.go', 'routers/branch.go'] } });
+  const { run, prompts } = recorder(['backend'], { planner: async () => result(withFiles) });
+  await runTask('Files', { config, agents, pricing: {}, bus: createBus(), confirm: deny, run });
+  assert.match(prompts['coder-backend'][0], /Start from these files \(chosen by the planner\): models\/branch\.go, routers\/branch\.go\./);
+  assert.match(prompts.planner[0], /"files": \{ "frontend": \["\.\.\."\], "backend": \["\.\.\."\] \}/);
 });

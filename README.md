@@ -59,6 +59,8 @@ sourcerer cost [runId] [--since 7d] [--by agent|role|llm]
 sourcerer worktree remove <slug> [--force]                 # after you have committed
 ```
 
+The planner has no tools either: Sourcerer searches the repos for the task and gives it the results, and the planner names the files each coder should start from. That keeps planning to seconds and saves the coders much of their exploring.
+
 The reviewer has no tools: it reviews the diffs, coder notes, contract and test result in its prompt, and lists anything it can't judge from the diff as a comment. That keeps reviews fast (seconds, not minutes) on large repos.
 
 Run ids accept a unique prefix and default to the latest run.
@@ -105,7 +107,7 @@ sourcerer use coder cursor-fast --fallback cursor-main     # a separate profile 
 - `sourcerer smoke <profile>` tries the profile's own model, not one given with `use --model`. To try another model, make it a profile.
 - Which models are available, and whether one can be selected explicitly with `--model`, depends on your plan with that CLI. Check with `smoke` before a long run.
 
-**`sourcerer.yaml` sections**: `llms` (profiles, replaced by name), `agents` (`<name>: { llm, model, fallbackLlm }`), `repos` (`<side>: { base, setup, test, docs, commands, path }`; `commands`: extra commands that repo's coder may run, e.g. `[make fmt, make generate-swagger]`; `base` defaults to the repo's main branch: origin's default branch, else `main` or `master`), `budget`, `review`, `tools`, `paths`, `pricing` (`<model>: { input, output, cachedInput }`, USD per 1M tokens; needed for CLIs that don't report cost). To change a prompt, put a full agent file in `<workspace>/agents/<name>.yaml`: it replaces the package's agent of that name (or adds a new agent).
+**`sourcerer.yaml` sections**: `llms` (profiles, replaced by name), `agents` (`<name>: { llm, model, fallbackLlm }`), `repos` (`<side>: { base, setup, test, checks, docs, commands, path }`; `checks`: quick commands (format, lint, generated-file checks) run after each coder pass before `test`, a failure goes straight back to the coder; `commands`: extra commands that repo's coder may run, e.g. `[make fmt, make generate-swagger]`; `base` defaults to the repo's main branch: origin's default branch, else `main` or `master`), `budget`, `review`, `tools`, `paths`, `pricing` (`<model>: { input, output, cachedInput }`, USD per 1M tokens; needed for CLIs that don't report cost). To change a prompt, put a full agent file in `<workspace>/agents/<name>.yaml`: it replaces the package's agent of that name (or adds a new agent).
 
 **Environment variables** (see `.env.example`):
 

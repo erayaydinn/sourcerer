@@ -35,8 +35,12 @@ export async function runTask(task, { config, agents, pricing, bus, confirm, pau
     const planner = byRole(agents, 'planner');
     const repos = config.repos;
     const planWorkspace = { cwd: runDir, readDirs: [repos.frontend.path, repos.backend.path] };
+    // The planner has no tools: it plans from repo search results for the task.
+    const searched = ctx.contextFor ? await Promise.all((sides ?? ['frontend', 'backend']).map((side) => ctx.contextFor({ side, task, plan: null, worktree: null }))) : [];
+    const context = searched.filter(Boolean).join('\n\n');
+    if (context) writeFileSync(join(runDir, 'planner.context.txt'), context);
     const planOnce = async (options, schema) => parseJsonBlock(
-      await callAgent(ctx, planner, plannerPrompt(task, repos, sides, options), planWorkspace, 0), schema, 'planner');
+      await callAgent(ctx, planner, plannerPrompt(task, repos, sides, { ...options, context }), planWorkspace, 0), schema, 'planner');
     let reply = await planOnce({ canAsk: Boolean(ask) }, ask ? plannerReplySchema : planSchema);
     if (reply.questions) {
       const given = await ask(reply.questions);
@@ -89,14 +93,25 @@ async function reviewLoop(ctx, { task, plan, agents, worktrees, dir, runDir }) {
         .then((output) => { ctx.notes[side] = redact(output).slice(-contextChars); });
     }));
 
+    // The repo's checks, then its test command, in order; the first failure goes back to that coder.
     const failing = {};
-    for (const side of Object.keys(feedback).filter((side) => repos[side].test)) {
-      const result = await runTests(repos[side].test, worktrees[side], ctx.signal, ctx.config.security);
+    for (const side of Object.keys(feedback)) {
+      const commands = [...(repos[side].checks ?? []), repos[side].test].filter(Boolean);
+      if (!commands.length) continue;
+      let result = { passed: true, output: '' };
+      let failed = null;
+      for (const command of commands) {
+        result = await runTests(command, worktrees[side], ctx.signal, ctx.config.security);
+        if (!result.passed) {
+          failed = command.run.join(' ');
+          break;
+        }
+      }
       const file = join(runDir, `${side}.r${round}.test.txt`);
       writeFileSync(file, result.output);
-      tests[side] = { command: repos[side].test.run.join(' '), passed: result.passed };
+      tests[side] = { command: commands.map((command) => command.run.join(' ')).join('; '), passed: result.passed };
       emit(ctx.bus, 'tests.finished', { runId: ctx.runId, side, round, passed: result.passed, file });
-      if (!result.passed) failing[side] = { round: round + 1, comments: [], testOutput: result.output.slice(-testOutputChars) };
+      if (failed) failing[side] = { round: round + 1, comments: [], testOutput: result.output.slice(-testOutputChars), failedCommand: failed };
     }
     if (Object.keys(failing).length) {
       if (round >= maxRounds) return 'tests-failed';

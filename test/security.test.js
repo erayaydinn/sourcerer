@@ -146,13 +146,13 @@ test('with the macOS sandbox on, cursor-agent is allowed (the OS confines it)', 
 test('repo commands: a coder may run its own repo\'s commands, not the other repo\'s', () => {
   const root = workspace([
     'repos:',
-    '  backend: { commands: [make fmt, make generate-swagger], test: { run: [make, test-unit], timeoutSec: 60 } }',
+    '  backend: { commands: [make fmt, make generate-swagger], test: { run: [make, test-unit], timeoutSec: 60 }, checks: [{ run: [make, swagger-check], timeoutSec: 60 }] }',
     '  frontend: { commands: [pnpm lint] }',
     'security: { allowCommands: [git status], sandbox: { enabled: false } }',
   ].join('\n'));
   const { config } = loadProject(root);
-  assert.deepEqual(allowedCommands(config, 'backend'), ['git status', 'make fmt', 'make generate-swagger', 'make test-unit']);
+  assert.deepEqual(allowedCommands(config, 'backend'), ['git status', 'make fmt', 'make generate-swagger', 'make test-unit', 'make swagger-check']);
   assert.deepEqual(allowedCommands(config, 'frontend'), ['git status', 'pnpm lint']);
-  assert.deepEqual(allowedCommands(config), ['git status', 'pnpm lint', 'make fmt', 'make generate-swagger', 'make test-unit']);
+  assert.deepEqual(allowedCommands(config), ['git status', 'pnpm lint', 'make fmt', 'make generate-swagger', 'make test-unit', 'make swagger-check']);
 });
 

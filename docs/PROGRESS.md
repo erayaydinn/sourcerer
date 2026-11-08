@@ -724,3 +724,26 @@ Change:
 - End-to-end: `sourcerer run` with a hanging fake claude got SIGTERM. It exited with 143, nothing was left running, and no fallback agent was started.
 - Test and setup commands are not detached; execa already stops them when Sourcerer exits.
 
+## Small tasks: as fast as Cursor, better quality (in progress)
+
+- Goal (user): with the same model, finish a small task in the same time as cursor-agent alone, at higher quality.
+- Time split measured on Gitea with grok: coder about 330-390 s (same as Cursor alone), planner 70-85 s (explored the repo with tools), reviewer about 150 s with grok (18 s tool-free with sonnet).
+- Planner (agents/planner.yaml): `tools: []`, maxTurns 2.
+  - runTask calls `contextFor({ side, task, plan: null })` for the given sides, or both, before planning. repoContext then uses the task as the query.
+  - The results go into plannerPrompt and are saved as planner.context.txt.
+  - The plan has `files: { frontend, backend }`: existing files to start from.
+- Coder prompt: "Start from these files (chosen by the planner): ..." when the plan names them.
+- `repos.<side>.checks`: commands run in order in the sandbox after each coder pass, before `test`.
+  - The first failure goes back to the coder as "`<command>` failed" with its output; fix rounds and maxRounds work as for tests.
+  - The reviewer sees all commands and whether they passed. Checks are also in that coder's allowlist.
+  - Example for Gitea: `make swagger-check` would have caught the hand-edited swagger spec.
+- Tests: 166.
+- Measured on Gitea with grok (task: GET branches/count):
+  - Sourcerer: 531 s in total. Planner 65 s / 16k tokens; coder 289 s / 112k tokens; the swagger check passed in round 1; reviewer 163 s.
+  - The reviewer approved in prose without the JSON block, so the run ended "failed".
+  - Cursor alone failed twice with a RetriableError (905 s and 1180 s). Its earlier successful run took 326 s.
+  - Quality: both pass build, gofmt, vet, the 7-scenario probe and the swagger check. Sourcerer documents 401/403/404/500 and adds no unneeded checks. Cursor documents 200 only and adds an unneeded GitRepo nil check.
+- Next:
+  - When the planner or reviewer omits the JSON block, retry once asking for the format.
+  - Shorter reviewer output: grok's reviewer time follows its output length (11k tokens).
+

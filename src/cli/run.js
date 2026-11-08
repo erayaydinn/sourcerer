@@ -119,7 +119,8 @@ async function repoContext(config, root, { side, task, plan, worktree }, print) 
   try {
     const built = await buildIndex(config, root, side);
     if (!built.upToDate) print(`  index ${side}: ${built.files} files (${built.analyzed} analyzed) in ${(built.ms / 1000).toFixed(1)}s`);
-    const query = [plan.instructions[side], plan.contract, task].join('\n');
+    // Before planning (plan is null) the task alone is the query.
+    const query = plan ? [plan.instructions[side], plan.contract, task].join('\n') : task;
     const { text, files } = await relevantContext(config, root, side, query, worktree);
     if (files.length) print(`  context ${side}: ${files.length} likely relevant files`);
     return text;

@@ -4,6 +4,8 @@ export const planSchema = z.object({
   sides: z.array(z.enum(['frontend', 'backend'])).min(1),
   contract: z.string().min(1),
   instructions: z.object({ frontend: z.string().optional(), backend: z.string().optional() }),
+  // Existing files each coder should start from (to read or change).
+  files: z.object({ frontend: z.array(z.string()).default([]), backend: z.array(z.string()).default([]) }).default({ frontend: [], backend: [] }),
 }).refine((plan) => plan.sides.every((side) => plan.instructions[side]), 'every side needs instructions');
 
 export const MAX_QUESTIONS = 5;
@@ -24,21 +26,22 @@ export const reviewSchema = z.object({
 
 // sides (optional, from --side): the work is limited to these sides; the planner must not pick others.
 // canAsk: the user is there to answer questions. answers: [{ question, answer }] from an earlier reply.
-export function plannerPrompt(task, repos, sides, { canAsk = false, answers } = {}) {
+// context: repo search results for the task (the planner has no tools of its own), or ''.
+export function plannerPrompt(task, repos, sides, { canAsk = false, answers, context = '' } = {}) {
   const decide = sides
     ? `The work is limited to: ${sides.join(', ')}. Set "sides" to exactly ${JSON.stringify(sides)} and plan no work for other sides.`
     : 'Decide which sides need changes. Pick only one side if the change touches only one side.';
   return `Task: ${task}
 
-Read-only repos:
-- frontend: ${repos.frontend.path}
-- backend: ${repos.backend.path}
-
+Repos: frontend ${repos.frontend.path}, backend ${repos.backend.path}
+${context ? `\n${context}\n` : ''}
 Write the API contract (OpenAPI or JSON schema).
 ${decide}
+In "files", list for each side the existing files its coder should start from (to read or change), most important first.
+Use only paths from the search results above, or paths you are sure exist.
 End your answer with exactly one fenced json block in this shape:
 \`\`\`json
-{ "sides": ["frontend", "backend"], "contract": "<contract text>", "instructions": { "frontend": "...", "backend": "..." } }
+{ "sides": ["frontend", "backend"], "contract": "<contract text>", "instructions": { "frontend": "...", "backend": "..." }, "files": { "frontend": ["..."], "backend": ["..."] } }
 \`\`\`
 ${questionRule(canAsk, answers)}`;
 }
@@ -58,11 +61,12 @@ or what has an obvious default. At most ${MAX_QUESTIONS} short questions. Then e
 \`\`\``;
 }
 
-// feedback: { round, comments, testOutput } for fix rounds, null for the first pass.
+// feedback: { round, comments, testOutput, failedCommand } for fix rounds, null for the first pass.
 // context: likely relevant files from the repo search (first pass only), or ''.
 // commands: the shell commands the coder may run (allowlist on), or null.
 export function coderPrompt(task, plan, side, workspace, feedback, context = '', commands = null) {
   const readOnly = workspace.readDirs.length ? `\nRead-only (do not change): ${workspace.readDirs.join(', ')}` : '';
+  const files = plan.files?.[side]?.length ? `\nStart from these files (chosen by the planner): ${plan.files[side].join(', ')}. Read others only when you need them.` : '';
   const allowed = commands ? `\nShell commands you may run (each may take more arguments; anything else is denied): ${commands.join(', ')}.
 Run each one on its own: no &&, ;, pipes or environment-variable prefixes. If a command you need is not listed, say so in your answer.` : '';
   return `Task: ${task}
@@ -73,13 +77,13 @@ ${plan.contract}
 Your part (${side}):
 ${plan.instructions[side]}
 
-Work only in ${workspace.cwd}.${readOnly}
+Work only in ${workspace.cwd}.${readOnly}${files}
 Do not write or change tests. Run only the existing tests that cover your change; if they fail, fix your code. Do not commit or push.${allowed}${context ? `\n\n${context}` : ''}${feedback ? fixSection(feedback) : ''}`;
 }
 
-function fixSection({ round, comments, testOutput }) {
+function fixSection({ round, comments, testOutput, failedCommand }) {
   const parts = [`\n\nThis is fix round ${round}. Your earlier changes are already in the worktree (see git diff).`];
-  if (testOutput) parts.push(`The test command failed. End of its output:\n\`\`\`\n${testOutput}\n\`\`\``);
+  if (testOutput) parts.push(`\`${failedCommand}\` failed. End of its output:\n\`\`\`\n${testOutput}\n\`\`\``);
   if (comments.length) parts.push(`Reviewer feedback:\n${comments.map((comment) => `- ${comment}`).join('\n')}`);
   parts.push('Address all of it.');
   return parts.join('\n\n');

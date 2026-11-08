@@ -42,6 +42,7 @@ const repo = z.object({
   base: z.string().optional(), // detected from the repo when unset (see defaultBranch)
   setup: command.optional(),
   test: command.optional(),
+  checks: z.array(command).default([]), // quick checks run after each coder pass, before the test command
   docs: z.array(z.string()).default([]),
   commands: z.array(z.string()).default([]), // extra commands this repo's coder may run (prefixes)
 }).strict();
